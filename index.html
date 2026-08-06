@@ -497,11 +497,11 @@
 
 
         <div id="contact-status" class="contact-status" role="status" tabindex="-1" hidden></div>
-        <form class="contact-form" action="https://formsubmit.co/cedenoatilio@gmail.com" method="POST" aria-describedby="contact-status">
-          <input type="hidden" name="_subject" value="Nueva solicitud de cotización | Tecnimaster Security">
+        <form class="contact-form" action="https://formsubmit.co/cobranzastecnimaster@gmail.com" method="POST" aria-describedby="contact-status">
+          <input type="hidden" name="_subject" value="Nueva solicitud desde Tecnimaster Security">
           <input type="hidden" name="_template" value="table">
-          <input type="hidden" name="_captcha" value="true">
-          <input type="hidden" name="_next" value="https://tecnimastersecurity.com/?contacto=enviado#contact">
+          <input type="hidden" name="_captcha" value="false">
+          <input type="hidden" name="_next" value="https://midominio.cl/confirmacion.html">
           <input type="text" name="_honey" tabindex="-1" autocomplete="off" aria-hidden="true" class="form-honey">
 
           <div class="form-grid">
@@ -532,6 +532,7 @@
                 <option value="Inmovilizador antiportonazo">Inmovilizador antiportonazo</option>
                 <option value="Corta corriente biométrico">Corta corriente biométrico</option>
                 <option value="GPS 4G plan rastreo 24/7">GPS 4G plan rastreo 24/7</option>
+                <option value="Polarizado y/o laminas de seguridad">Polarizado y/o laminas de seguridad</option>
                 <option value="Necesito orientación">Necesito orientación</option>
               </select>
             </div>
@@ -647,25 +648,53 @@
     window.addEventListener('load', () => {
       const locationSection = document.querySelector('.location-section')
       const locationVideo = document.getElementById('location-video')
-      let hasAutoplayed = false
+      let userInteracted = false
+      let isInView = false
 
       if (!locationSection || !locationVideo || !('IntersectionObserver' in window)) {
         return
       }
 
+      locationVideo.volume = 0.25
+      locationVideo.muted = true
+
+      const unlockAudio = () => {
+        userInteracted = true
+        if (isInView && !locationVideo.paused) {
+          locationVideo.volume = 0.25
+          locationVideo.muted = false
+        }
+      }
+
+      window.addEventListener('click', unlockAudio, { once: true, passive: true })
+      window.addEventListener('touchstart', unlockAudio, { once: true, passive: true })
+      window.addEventListener('keydown', unlockAudio, { once: true })
+
       const tryPlay = () => {
         const playPromise = locationVideo.play()
-        if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(() => {})
+        if (playPromise && typeof playPromise.then === 'function') {
+          playPromise
+            .then(() => {
+              if (userInteracted && isInView) {
+                locationVideo.volume = 0.25
+                locationVideo.muted = false
+              }
+            })
+            .catch(() => {})
         }
       }
 
       const observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting && !hasAutoplayed) {
-            hasAutoplayed = true
+          if (entry.isIntersecting) {
+            isInView = true
+            locationVideo.volume = 0.25
+            locationVideo.muted = true
             tryPlay()
-            observer.unobserve(locationSection)
+          } else {
+            isInView = false
+            locationVideo.muted = true
+            locationVideo.pause()
           }
         })
       }, {
