@@ -1,6 +1,6 @@
 # Tecnimaster Security
 
-Landing page estática de Tecnimaster Security, orientada a captación comercial y despliegue rápido como MVP en Vercel.
+Homepage de Tecnimaster Security con módulo React de Cobranza en `/cobranza/`, accesible desde el dropdown **Acceso a plataforma**. El módulo tiene autenticación de servidor y base PostgreSQL. Ver [configuración de Cobranza](COBRANZA.md) para crear credenciales, ejecutar localmente y desplegar.
 
 ## Stack
 
@@ -32,7 +32,7 @@ Landing page estática de Tecnimaster Security, orientada a captación comercial
 
 ## Desarrollo local
 
-Como es un sitio estático, puedes abrirlo con Live Server en VS Code o servirlo con cualquier servidor simple.
+Para el sitio completo usa `npm install`, `npm run setup` y `npm run dev`. Los servidores estáticos de abajo solo muestran el homepage; no ejecutan Cobranza ni su API.
 
 Opciones comunes:
 
@@ -51,7 +51,7 @@ http://localhost:5500
 
 ## Deploy en Vercel
 
-Este proyecto ya queda preparado para un MVP estático en Vercel.
+Este proyecto incluye frontend estático y una función Node para Cobranza. Configura primero PostgreSQL y las variables de autenticación según [COBRANZA.md](COBRANZA.md).
 
 ### Opción 1: desde GitHub
 
@@ -60,8 +60,8 @@ Este proyecto ya queda preparado para un MVP estático en Vercel.
 3. Importa el repositorio.
 4. Framework Preset: `Other`.
 5. Root Directory: `./`
-6. Build Command: dejar vacío.
-7. Output Directory: dejar vacío.
+6. Build Command: `npm run build`.
+7. Output Directory: `dist`.
 8. Deploy.
 
 ### Opción 2: con Vercel CLI

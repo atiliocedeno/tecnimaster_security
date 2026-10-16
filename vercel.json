@@ -28,6 +28,32 @@
           "value": "geolocation=(), microphone=(), camera=()"
         }
       ]
+    },
+    {
+      "source": "/cobranza/:path*",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    }
+  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/cobranza.mjs": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/cobranza",
+      "destination": "/cobranza/index.html"
     }
   ]
 }

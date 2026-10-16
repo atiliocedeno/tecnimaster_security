@@ -2,3 +2,9 @@
 .vercel
 node_modules
 *.log
+
+dist/
+.data/
+.env*
+!.env.example
+*.tsbuildinfo
