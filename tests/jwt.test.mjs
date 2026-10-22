@@ -1,0 +1,20 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {createHmac} from 'node:crypto';
+import {sessionToken,validSession,cookie} from '../server/auth.mjs';
+test('JWT: firma, claims, algoritmo, expiración y cookies protegidas',()=>{
+ const secret='s'.repeat(48),now=1800000000000,token=sessionToken(secret,now),wrap=t=>'cobranza_session='+t;
+ assert.equal(token.split('.').length,3);
+ assert.ok(validSession(wrap(token),secret,now));
+ assert.ok(!validSession(wrap(token),'z'.repeat(48),now));
+ assert.ok(!validSession(wrap(token),secret,now+28800000));
+ assert.ok(!validSession(wrap(token),secret,now-1000));
+ assert.ok(!validSession(wrap(token+'.extra'),secret,now));
+ assert.ok(!validSession(wrap(token)+'; '+wrap(token),secret,now));
+ const [h,p]=token.split('.').slice(0,2).map(x=>JSON.parse(Buffer.from(x,'base64url').toString()));
+ const sign=(header,claims)=>{const data=[header,claims].map(x=>Buffer.from(JSON.stringify(x)).toString('base64url')).join('.');return data+'.'+createHmac('sha256',secret).update(data).digest('base64url')};
+ for(const claims of [{...p,aud:'other'},{...p,iss:'other'},{...p,sub:'other'},{...p,exp:String(p.exp)},{...p,exp:p.exp+1},{...p,nbf:p.iat+60},{...p,jti:''}])assert.ok(!validSession(wrap(sign(h,claims)),secret,now));
+ for(const header of [{alg:'none',typ:'JWT'},{alg:'HS512',typ:'JWT'},{...h,crit:['unknown']}])assert.ok(!validSession(wrap(sign(header,p)),secret,now));
+ assert.match(cookie(token),/HttpOnly; SameSite=Strict/);assert.match(cookie(token),/Secure/);
+ assert.notEqual(token,sessionToken(secret,now));
+});

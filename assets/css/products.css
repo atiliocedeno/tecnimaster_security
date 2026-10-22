@@ -1,0 +1,22 @@
+.security-products{padding:80px 0;background:#f6f7f8;color:#272b30;scroll-margin-top:100px}
+.security-products-heading{max-width:720px;margin:0 auto 38px;text-align:center}
+.security-products-heading>span{font-size:12px;letter-spacing:2px;font-weight:700;color:#a92227}
+.security-products-heading h2{font-size:clamp(28px,3vw,42px);font-weight:750;line-height:1.18;margin:14px 0 18px;color:#24272c}
+.security-products-heading p{color:#626970;font-size:17px;line-height:1.7}
+.security-products-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}
+.security-product{background:white;border:1px solid #e3e5e8;border-radius:20px;overflow:hidden;display:flex;flex-direction:column;scroll-margin-top:110px;box-shadow:0 8px 24px #17212b05}
+.security-product-image{height:240px;padding:24px;display:flex;align-items:center;justify-content:center;border-bottom:1px solid #f0f1f3;background:white}
+.security-product-image img{display:block;width:100%;height:100%;object-fit:contain;max-width:310px}
+.security-product-body{padding:28px;display:flex;flex-direction:column;flex:1}
+.security-product-tag{font-size:12px;font-weight:700;color:#a92227;margin-bottom:12px}
+.security-product h3{font-size:23px;line-height:1.3;font-weight:700;margin:0 0 14px;min-height:60px}
+.security-product-body>p{font-size:15px;line-height:1.7;color:#656c74;margin:0 0 20px}
+.security-product ul{list-style:none;margin:0 0 28px;padding:0;font-size:14px;line-height:1.5;color:#444b53}
+.security-product li{display:flex;align-items:start;gap:10px;margin-bottom:12px}
+.security-product li i{color:#ac2429;font-size:18px;flex-shrink:0}
+.security-product-cta{margin-top:auto;border:1px solid #b1262c;border-radius:10px;padding:13px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;color:#a92227;font-size:14px;font-weight:700;text-decoration:none}
+.security-product-cta:hover{background:#a92227;color:white}
+.security-product-cta:focus-visible{outline:3px solid #315db7;outline-offset:3px}
+.security-products-note{font-size:13px;color:#70767d;text-align:center;margin:24px auto 0;max-width:760px;line-height:1.6}
+@media(max-width:991px){.security-products-grid{grid-template-columns:1fr;max-width:640px;margin:auto}.security-product{display:grid;grid-template-columns:190px 1fr}.security-product-image{height:100%;min-height:240px;padding:18px;border:0}.security-product-body{padding:24px}.security-product h3{min-height:0}}
+@media(max-width:575px){.security-products{padding:48px 0}.security-products-grid{gap:20px}.security-product{display:flex}.security-product-image{height:200px;min-height:0;border-bottom:1px solid #f0f1f3}.security-product-image img{max-width:260px}.security-product-body{padding:24px}.security-products-heading{margin-bottom:26px}}

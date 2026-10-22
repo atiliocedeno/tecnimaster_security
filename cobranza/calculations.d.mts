@@ -1,0 +1,12 @@
+export function todayCL():string;
+export function monthDay(period:string,day:number,offset?:number):string;
+export function addDays(date:string,days:number):string;
+export function datesFor(client:any,period:string):{due:string;grace_until:string;suspension_on:string|null};
+export function deadlineFor(invoice:any):string;
+export function invoiceStatus(invoice:any,date?:string):string;
+export function balance(invoice:any):number;
+export function overdue(invoice:any,date?:string):number;
+export function tax(price:number,mode:string):{net:number;iva:number;total:number};
+export function vehicleTotal(vehicles:any[]):{net:number;iva:number;total:number};
+export function phoneInfo(raw?:string):{raw:string;normalized:string;valid:boolean;issue:string};
+export function displayPhone(raw:string):string;
