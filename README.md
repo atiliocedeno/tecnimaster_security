@@ -6,7 +6,6 @@ Homepage y módulo React de Cobranza en `/cobranza/`: clientes, mensualidades, p
 
 - Node.js 22.13 o superior y npm. Usa una versión LTS compatible con Vite 7.
 - Una terminal en la raíz del proyecto, donde está `package.json`.
-- Para compartir la demo: `cloudflared` instalado y conexión a internet.
 - En desarrollo se utiliza PGlite (PostgreSQL embebido); no necesitas instalar un servidor PostgreSQL.
 
 ## Obtener el proyecto en tu equipo
@@ -16,7 +15,7 @@ git clone https://github.com/atiliocedeno/tecnimaster_security.git
 cd tecnimaster_security
 ```
 
-Si ya lo tienes, abre una terminal en esa carpeta y continúa con los pasos siguientes. **Para trabajar localmente no necesitas Vercel, Neon, Cloudflare ni `DATABASE_URL`.** PGlite guarda los datos en `.data/cobranza`.
+Si ya lo tienes, abre una terminal en esa carpeta y continúa con los pasos siguientes. **Para trabajar localmente no necesitas Vercel, Neon ni `DATABASE_URL`.** PGlite guarda los datos en `.data/cobranza`.
 
 ## 1. Instalar dependencias
 
@@ -75,56 +74,29 @@ Mantén la terminal abierta. Detén el servidor con `Ctrl+C`. Los datos persiste
 
 Live Server o `python3 -m http.server` solo sirven archivos estáticos: no ejecutan la API ni el login de Cobranza.
 
-## 5. Demo aislada con datos ficticios
+## 5. Versión pública en Vercel y Neon
 
-Esta instancia escucha en **8791**, utiliza una base en memoria y no carga `.env.local` ni `.data/cobranza`. Sus cambios se pierden al detenerla. No ingreses información real.
+La versión pública está en <https://tecnimaster-security.vercel.app/>. Vercel ejecuta la aplicación y Neon almacena los datos PostgreSQL. No depende del computador local encendido.
 
-### Archivos necesarios
+Las bases local y pública son independientes: los datos de `.data/cobranza` no se copian automáticamente a Neon.
 
-La demo actual depende de archivos externos al repositorio. Una clonación nueva no los incluye automáticamente:
+Configura estas variables de servidor en el entorno correspondiente de Vercel:
 
-| Ruta relativa a la raíz del repositorio | Uso |
+| Variable | Valor |
 | --- | --- |
-| `../pruebas-cobranza/cartera-demo-publica.json` | Fixture validado de 267 clientes ficticios |
-| `../pruebas-cobranza/Mensualidades_PRUEBA_PUBLICA.xlsx` | Excel ficticio descargable |
-| `../../work/excel-pruebas/demo-access.json` | Configuración privada de acceso de la demo |
+| `DATABASE_URL` | Cadena completa de Neon, comenzando con `postgresql://` y conservando sus parámetros SSL. |
+| `COBRANZA_USERNAME` | Usuario de administración. |
+| `COBRANZA_PASSWORD_HASH` | Hash generado por el proyecto; no la contraseña en texto plano. |
+| `SESSION_SECRET` | Secreto aleatorio de al menos 32 caracteres. |
+| `COBRANZA_TEST_IMPORTS` | Opcional: `true` exclusivamente para importar lotes ficticios adicionales. |
 
-Si faltan, solicita los archivos de prueba al administrador. No sustituyas el fixture por datos reales ni publiques `demo-access.json`. Las credenciales de la demo se administran aparte de `npm run setup`.
+No uses prefijos `VITE_` para estas variables. Después de cambiarlas, vuelve a desplegar.
 
-### Arranque local de la demo
+Aplica las migraciones de Neon con `node scripts/migrate.mjs` desde la raíz del repositorio, proporcionando `DATABASE_URL` como variable privada de la sesión de terminal. Este comando no carga `.env.local` por sí solo. No uses `--local` para Neon. La migración crea las tablas y el catálogo; los clientes se importan aparte.
 
-```bash
-npm run build
-node tests/public-preview.mjs
-```
+El despliegue conectado a `main` se actualiza al publicar cambios en esa rama si la integración automática está habilitada. Una compilación con `npm run build` por sí sola no publica la aplicación.
 
-Abre <http://127.0.0.1:8791/cobranza/>. Esta instancia sirve el homepage en `/` y Cobranza en `/cobranza/`, utilizando los archivos compilados en `dist`.
-
-## 6. Generar un enlace público temporal
-
-Comparte únicamente la demo ficticia. Compila primero con `npm run build` y utiliza dos terminales.
-
-**Terminal 1: crea el túnel y déjalo abierto.**
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:8791 --no-autoupdate
-```
-
-Cloudflare imprimirá un origen como `https://nombre-generado.trycloudflare.com`. Copia la dirección exacta, sin añadir `/cobranza/`.
-
-**Terminal 2: inicia la demo con ese origen.** Si ya está ejecutándose, detenla primero con `Ctrl+C`; esto reinicia sus datos ficticios.
-
-```bash
-DEV_PUBLIC_ORIGIN='https://nombre-generado.trycloudflare.com' node tests/public-preview.mjs
-```
-
-Reemplaza `nombre-generado` por el nombre real del túnel. Abre la dirección pública agregando `/cobranza/` y comprueba el inicio de sesión.
-
-`DEV_PUBLIC_ORIGIN` permite exclusivamente ese origen HTTPS. Se mantienen `X-Cobranza-Request`, la validación de origen y la cookie segura por HTTPS. Si cambia el túnel, reinicia la demo con el origen nuevo. No desactives esos controles para corregir un 403.
-
-El enlace no es hosting permanente: depende del equipo, de su conexión y de ambos procesos. Puede caducar o cambiar. Detén ambos procesos con `Ctrl+C` cuando termines.
-
-## 7. Verificación
+## 6. Verificación
 
 ```bash
 npm test
@@ -143,10 +115,7 @@ Comprueba login, búsqueda, vista mensual, ficha con pagos, selección de destin
 | `EADDRINUSE` | El puerto está ocupado. Detén la instancia anterior desde su terminal. |
 | Falta aplicar la migración | Detén desarrollo y ejecuta `npm run db:migrate -- --local`. |
 | Base local inexistente al migrar | Inicia `npm run dev` una vez, espera el mensaje de arranque y detenlo antes de migrar. |
-| Solicitud no permitida en el túnel | `DEV_PUBLIC_ORIGIN` debe coincidir exactamente con la URL vigente. Reinicia la demo tras cambiarlo. |
-| URL caída o error 502 | Comprueba conexión, proceso cloudflared y servidor en 8791. |
-| `ENOENT` al iniciar la demo | Revisa los tres archivos externos y que exista `dist/cobranza` después del build. |
-| Usuario o clave incorrectos | Usa las credenciales del entorno correcto: demo y desarrollo son independientes. |
+| Usuario o clave incorrectos | Usa las credenciales del entorno correcto: local y Vercel son independientes. |
 | Cambio guardado, actualización pendiente | Actualiza saldos antes de otra operación; no repitas el pago. |
 
 ## Estructura
@@ -157,24 +126,23 @@ assets/          Recursos del homepage
 cobranza/        React y cálculos
 server/          API, autenticación y migraciones
 scripts/         Desarrollo, setup, build y migración
-tests/           Pruebas y servidor de demo pública
+tests/           Pruebas automatizadas y utilidades
 dist/            Resultado de npm run build
 output/pdf/      Manuales generados en este equipo
 ```
 
 ## Documentación y producción
 
-- [Manual de uso de seis páginas](output/pdf/Manual_Cobranza_Tecnimaster_6_paginas.pdf)
 - [Informe de mejoras y QA](docs/qa/mejoras-2026-10-20.md)
 - [Configuración de servidor y producción](COBRANZA.md)
 
-El frontend compilado por sí solo no incluye API ni base de datos. Producción requiere PostgreSQL, variables de servidor y migraciones; consulta `COBRANZA.md`. No se modifica el despliegue de producción siguiendo las instrucciones del túnel de pruebas.
+El frontend compilado por sí solo no incluye API ni base de datos. Producción requiere PostgreSQL, variables de servidor y migraciones; consulta `COBRANZA.md`.
 
 ## Servicios, agenda y pagos con evidencia
 
 La nueva administración incluye **Servicios y agenda**, **Pagos por validar** e **Ingresos**. El catálogo contiene 16 servicios de cobro único, cotización manual por vehículo, límites configurables, pagos parciales, evidencias privadas y un desglose de mensualidades y servicios. Los pagos nuevos de la interfaz, incluidos adelantos, quedan pendientes hasta su aprobación.
 
-Consulta [la guía de esta fase](docs/SERVICIOS-Y-AGENDA.md). Aplica la migración `003_services` con el comando de migración de la sección 3 antes de usarla en una base existente. La demo aislada la aplica automáticamente a su base en memoria e incluye cinco citas ficticias. No requiere alterar `.env.local` ni la base real para probarla.
+Consulta [la guía de esta fase](docs/SERVICIOS-Y-AGENDA.md). Aplica la migración `003_services` con el comando de migración de la sección 3 antes de usarla en una base existente.
 
 ### Importaciones adicionales de prueba
 
@@ -190,4 +158,4 @@ Para probar lotes ficticios adicionales localmente sin modificar `.env.local`:
 COBRANZA_TEST_IMPORTS=true npm run dev
 ```
 
-En PowerShell: `$env:COBRANZA_TEST_IMPORTS="true"; npm run dev`. Al terminar, elimina esa variable de la sesión (`Remove-Item Env:COBRANZA_TEST_IMPORTS` en PowerShell). En Vercel, agrega la variable al entorno del despliegue y haz Redeploy. La demo aislada de 8791 mantiene bloqueada toda importación; usa el desarrollo normal de 8787 o la base ficticia de Vercel para estos lotes.
+En PowerShell: `$env:COBRANZA_TEST_IMPORTS="true"; npm run dev`. Al terminar, elimina esa variable de la sesión (`Remove-Item Env:COBRANZA_TEST_IMPORTS` en PowerShell). En Vercel, agrega la variable al entorno del despliegue y haz Redeploy.
