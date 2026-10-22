@@ -1,0 +1,79 @@
+import {advancePlan} from '../cobranza/advance.mjs';
+import {isDeepStrictEqual} from 'node:util';
+import {z} from 'zod';
+import {randomUUID,createHash} from 'node:crypto';
+import {transaction} from './transactions.mjs';
+import {collectionMutation,DomainError} from './collections.mjs';
+import {todayCL,phoneInfo} from '../cobranza/calculations.mjs';
+export const SERVICE_NAMES=['Alarmas código variable','Alarmas homologadas','Plan rastreo 24/7','Plan antiportonazo','Plan rastreo 24/7 Teltonika','Plan de GPS pago único','Corta corriente con chip','Corta corriente con botón','Corta corriente biométrico','Cámaras dashcam 2 canales','Cámara dashcam 3 canales','Polarizado 35% y 70%','Láminas de seguridad de 4 micras','Láminas de seguridad de 8 micras','Láminas de seguridad de 12 micras','Lámina de seguridad polarizada'];
+const id=z.string().min(1).max(100),amount=z.number().int().positive().max(1000000000),short=z.string().trim().min(1).max(200),reason=z.string().trim().min(3).max(2000);
+const date=z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(v=>Number.isFinite(Date.parse(v))&&new Date(v).toISOString().slice(0,10)===v,'Fecha inválida');
+const ensure=(v,message,status=400)=>{if(!v)throw new DomainError(message,status)};
+const one=async(tx,sql,args=[])=>(await tx.query(sql,args)).rows[0];
+const audit=(tx,entity,action,actor,payload,why='')=>tx.query('INSERT INTO service_audit(id,entity_id,action,actor,payload,reason) VALUES($1,$2,$3,$4,$5,$6)',[randomUUID(),entity,action,actor,JSON.stringify(payload),why]);
+export async function seedServices(tx){for(const [i,name] of SERVICE_NAMES.entries())await tx.query('INSERT INTO service_catalog(id,name) VALUES($1,$2) ON CONFLICT DO NOTHING',['service-'+(i+1),name]);}
+export async function serviceData(db){
+ const [catalog,appointments,payments,evidence,audits,ledger,invoices]=await Promise.all([
+ db.query('SELECT * FROM service_catalog ORDER BY name'),db.query('SELECT * FROM service_appointments ORDER BY scheduled_on DESC,start_time DESC'),db.query('SELECT id,target_kind,target_id,amount,method,paid_on,reference,note,status,actor,reviewed_by,reason,reversed_on,created_at FROM reported_payments ORDER BY created_at DESC'),db.query('SELECT id,payment_id,name,mime,bytes FROM payment_evidence'),db.query('SELECT * FROM service_audit ORDER BY created_at DESC LIMIT 200'),db.query('SELECT p.*,i.kind,i.period,i."clientId" FROM payments p JOIN invoices i ON p.invoice_id=i.id ORDER BY paid_on DESC'),db.query('SELECT id,"clientId",kind,period,issued_on,amount,paid,review,voided FROM invoices')]);
+ return {catalog:catalog.rows,appointments:appointments.rows,payments:payments.rows,evidence:evidence.rows,audits:audits.rows,ledger:ledger.rows,invoices:invoices.rows};
+}
+export async function evidenceData(db,key){const row=await one(db,'SELECT name,mime,content FROM payment_evidence WHERE id=$1',[id.parse(key)]);ensure(row,'Archivo no encontrado',404);return row;}
+function evidence(file){
+ const f=z.object({name:short,mime:z.enum(['image/png','image/jpeg','application/pdf']),content:z.string().min(4).max(1000000)}).parse(file);
+ ensure(/^[A-Za-z0-9+/]*={0,2}$/.test(f.content),'Archivo codificado incorrectamente');const bytes=Buffer.from(f.content,'base64');ensure(bytes.length>0&&bytes.length<=750000,'Cada evidencia admite hasta 750 KB');
+ const valid=f.mime==='application/pdf'?bytes.subarray(0,5).toString()==='%PDF-':f.mime==='image/png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+ ensure(valid,'El contenido no corresponde a un PDF, PNG o JPG válido');return {...f,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+}
+export async function serviceMutation(db,b,actor){return transaction(db,async tx=>{
+ if(b.action==='service.catalog'){
+  const d=z.object({id,version:z.number().int(),min_price:amount.nullable(),max_price:amount.nullable(),active:z.boolean(),reason}).parse(b.data);
+  ensure(!d.min_price||!d.max_price||d.min_price<=d.max_price,'El mínimo supera el máximo');const old=await one(tx,'SELECT * FROM service_catalog WHERE id=$1 FOR UPDATE',[d.id]);ensure(old&&old.version===d.version,'El servicio cambió; actualiza.',409);
+  await tx.query('UPDATE service_catalog SET min_price=$2,max_price=$3,active=$4,version=version+1 WHERE id=$1',[d.id,d.min_price,d.max_price,d.active]);await audit(tx,d.id,b.action,actor,{before:old,after:d},d.reason);return;
+ }
+ if(b.action==='service.appointment'){
+  const d=z.object({id,version:z.number().int().nonnegative(),client_id:id.nullable(),customer:short,phone:short,brand:short,model:short,year:z.number().int().min(1900).max(Number(todayCL().slice(0,4))+2),plate:z.string().max(20),color:z.string().max(80),scheduled_on:date,start_time:z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),duration:z.number().int().min(15).max(720),notes:z.string().max(2000),items:z.array(z.object({service_id:id,price:amount.nullable()})).min(1).max(16),reviewed:z.boolean(),reason:z.string().max(2000).default('')}).parse(b.data);
+  ensure(d.scheduled_on.slice(0,4)>='1900'&&d.scheduled_on.slice(0,4)<='9998','Fecha de agenda fuera de rango');ensure(Number(d.start_time.slice(0,2))*60+Number(d.start_time.slice(3))+d.duration<=1440,'La cita no puede terminar después de medianoche');ensure(phoneInfo(d.phone).valid,'Indica un teléfono internacional válido');ensure(new Set(d.items.map(i=>i.service_id)).size===d.items.length,'No repitas un servicio');
+  const old=await one(tx,'SELECT * FROM service_appointments WHERE id=$1 FOR UPDATE',[d.id]);if(old){ensure(old.version===d.version,'La cita cambió; actualiza.',409);ensure(!['confirmed','cancelled'].includes(old.status),'La cita está cerrada; no se sobrescribe su cotización',409);reason.parse(d.reason);}
+  if(d.client_id)ensure(await one(tx,'SELECT id FROM clients WHERE id=$1',[d.client_id]),'Cliente no encontrado');
+  const items=[];for(const item of d.items){const service=await one(tx,'SELECT * FROM service_catalog WHERE id=$1 FOR SHARE',[item.service_id]);ensure(service&&service.active,'Servicio no disponible');if(item.price!==null){ensure(!service.min_price||item.price>=service.min_price,'Precio inferior al mínimo de '+service.name);ensure(!service.max_price||item.price<=service.max_price,'Precio superior al máximo de '+service.name);}items.push({...item,name:service.name});}
+  const total=items.every(i=>i.price!==null)?items.reduce((s,i)=>s+i.price,0):null;ensure(total===null||total<=1000000000,'Total fuera del límite técnico de CLP');ensure(!items.some(i=>i.price!==null)||d.reviewed,'Revisa y confirma los importes ingresados');
+  const committed=Number((await one(tx,"SELECT coalesce(sum(amount),0) n FROM reported_payments WHERE target_kind='service' AND target_id=$1 AND status IN ('pending','approved')",[d.id])).n);ensure(!committed||(total!==null&&total>=committed),'La cotización no puede quedar por debajo de los pagos reportados');
+  const written=await tx.query(`INSERT INTO service_appointments(id,client_id,customer,phone,brand,model,year,plate,color,scheduled_on,start_time,duration,notes,items,total) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(id) DO UPDATE SET client_id=$2,customer=$3,phone=$4,brand=$5,model=$6,year=$7,plate=$8,color=$9,scheduled_on=$10,start_time=$11,duration=$12,notes=$13,items=$14,total=$15,version=service_appointments.version+1 WHERE service_appointments.version=$16 AND $17 RETURNING id`,[d.id,d.client_id,d.customer,d.phone,d.brand,d.model,d.year,d.plate,d.color,d.scheduled_on,d.start_time,d.duration,d.notes,JSON.stringify(items),total,d.version,!!old]);ensure(written.rows.length,'La cita cambió; actualiza.',409);await audit(tx,d.id,b.action,actor,{before:old||null,after:{...d,items,total}},d.reason);return;
+ }
+ if(b.action==='service.transition'){
+  const d=z.object({id,version:z.number().int(),status:z.enum(['in_progress','performed','confirmed','cancelled']),performed_on:date.optional(),reason}).parse(b.data);
+  const a=await one(tx,'SELECT * FROM service_appointments WHERE id=$1 FOR UPDATE',[d.id]);ensure(a&&a.version===d.version,'La cita cambió; actualiza.',409);
+  ensure(({scheduled:['in_progress','cancelled'],in_progress:['performed','cancelled'],performed:['confirmed','cancelled'],confirmed:[],cancelled:[]}[a.status]).includes(d.status),'Transición no permitida');
+  if(d.status==='performed'){ensure(d.performed_on&&d.performed_on<=todayCL(),'Indica una fecha real no futura');}
+  if(d.status==='confirmed')ensure(a.total!==null&&Number(a.total)>0,'Completa y revisa la cotización antes de confirmar');
+  if(d.status==='cancelled')ensure(!(await one(tx,"SELECT id FROM reported_payments WHERE target_kind='service' AND target_id=$1 AND status IN ('pending','approved') LIMIT 1",[a.id])),'Rechaza o reversa los pagos antes de cancelar');
+  await tx.query('UPDATE service_appointments SET status=$2,performed_on=coalesce($3,performed_on),version=version+1 WHERE id=$1',[d.id,d.status,d.performed_on||null]);await audit(tx,d.id,b.action,actor,{before:a.status,after:d.status,performed_on:d.performed_on},d.reason);return;
+ }
+ if(b.action==='service.report'){
+  const d=z.object({id,target_kind:z.enum(['service','invoice','advance']),target_id:id,amount,method:z.enum(['cash','transfer','debit','credit']),paid_on:date.refine(v=>v<=todayCL(),'Fecha futura no permitida'),reference:z.string().trim().max(200),note:z.string().max(2000),payload:z.record(z.unknown()).default({}),evidence:z.array(z.unknown()).max(2)}).parse(b.data);
+  const files=d.evidence.map(evidence);ensure(d.method==='cash'||files.length>0,'Adjunta evidencia para pagos electrónicos');ensure(files.reduce((s,f)=>s+f.bytes,0)<=1200000,'Máximo 1,2 MB de evidencias por pago');
+  const previous=await one(tx,'SELECT * FROM reported_payments WHERE id=$1',[d.id]);if(previous){ensure(previous.target_kind===d.target_kind&&previous.note===d.note&&isDeepStrictEqual(previous.payload,d.payload)&&previous.target_id===d.target_id&&previous.amount==d.amount&&previous.method===d.method&&previous.reference===d.reference&&previous.paid_on===d.paid_on,'El identificador de pago ya se utilizó',409);const saved=(await tx.query('SELECT name,mime,sha256 FROM payment_evidence WHERE payment_id=$1 ORDER BY name,sha256',[d.id])).rows;const requested=files.map(({name,mime,sha256})=>({name,mime,sha256})).sort((a,b)=>a.name.localeCompare(b.name)||a.sha256.localeCompare(b.sha256));ensure(isDeepStrictEqual(saved,requested),'El comprobante del pago ya registrado es diferente',409);return;}
+  if(d.target_kind==='service'){const a=await one(tx,'SELECT * FROM service_appointments WHERE id=$1 FOR UPDATE',[d.target_id]);ensure(a&&a.status!=='cancelled'&&a.total!==null,'Completa la cotización antes de registrar anticipos');const n=Number((await one(tx,"SELECT coalesce(sum(amount),0) n FROM reported_payments WHERE target_kind='service' AND target_id=$1 AND status IN ('pending','approved')",[d.target_id])).n);ensure(n+d.amount<=Number(a.total),'El pago supera el saldo disponible');}
+  if(d.target_kind==='invoice'){const i=await one(tx,'SELECT * FROM invoices WHERE id=$1 FOR UPDATE',[d.target_id]);ensure(i&&!i.review&&!i.voided,'Confirma el cargo antes del pago');const n=Number((await one(tx,"SELECT coalesce(sum(amount),0) n FROM reported_payments WHERE target_kind='invoice' AND target_id=$1 AND status='pending'",[d.target_id])).n);ensure(Number(i.paid)+n+d.amount<=Number(i.amount),'El pago supera el saldo disponible');}
+  if(d.target_kind==='advance'){ensure(d.payload.clientId===d.target_id&&d.payload.total===d.amount,'Adelanto inconsistente');const client=await one(tx,'SELECT id,active FROM clients WHERE id=$1 FOR UPDATE',[d.target_id]);ensure(client&&client.active===1,'El adelanto requiere un cliente activo');z.string().uuid().parse(d.id);ensure(d.reference.length>0,'El adelanto requiere una referencia');ensure(typeof d.payload.start==='string'&&d.payload.start>=d.paid_on.slice(0,7),'El adelanto debe empezar en el mes del pago o después');const invoices=(await tx.query('SELECT * FROM invoices WHERE "clientId"=$1 ORDER BY id FOR UPDATE',[d.target_id])).rows;let plan;try{plan=advancePlan(invoices,d.payload.start,d.payload.months,d.payload.monthlyAmount,d.payload.tax_mode)}catch(e){throw new DomainError(e.message)}ensure(plan.reduce((s,p)=>s+p.pay,0)===d.amount,'Los saldos cambiaron; revisa el adelanto',409);ensure(!(await one(tx,"SELECT id FROM reported_payments WHERE target_kind='advance' AND target_id=$1 AND status='pending'",[d.target_id])),'Ya hay un adelanto pendiente para este cliente');}
+  await tx.query('INSERT INTO reported_payments(id,target_kind,target_id,amount,method,paid_on,reference,note,payload,actor) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)',[d.id,d.target_kind,d.target_id,d.amount,d.method,d.paid_on,d.reference,d.note,JSON.stringify(d.payload),actor]);
+  for(const f of files)await tx.query('INSERT INTO payment_evidence(id,payment_id,name,mime,bytes,sha256,content) VALUES($1,$2,$3,$4,$5,$6,$7)',[randomUUID(),d.id,f.name,f.mime,f.bytes,f.sha256,f.content]);await audit(tx,d.id,b.action,actor,{target_kind:d.target_kind,target_id:d.target_id,amount:d.amount,method:d.method,evidence:files.map(f=>({name:f.name,sha256:f.sha256}))});return;
+ }
+ if(b.action==='service.review'){
+  const d=z.object({id,status:z.enum(['approved','rejected','reversed']),reason}).parse(b.data),p=await one(tx,'SELECT * FROM reported_payments WHERE id=$1 FOR UPDATE',[d.id]);ensure(p,'Pago no encontrado');if(p.status===d.status)return;ensure(p.status==='pending'&&d.status!=='reversed'||p.status==='approved'&&d.status==='reversed','El pago ya fue revisado',409);
+  const adapter={transaction:fn=>fn(tx)};
+  if(d.status==='approved'){
+   if(p.target_kind==='service'){const a=await one(tx,'SELECT * FROM service_appointments WHERE id=$1 FOR UPDATE',[p.target_id]);ensure(a&&a.status!=='cancelled'&&a.total!==null,'Servicio no disponible');const n=Number((await one(tx,"SELECT coalesce(sum(amount),0) n FROM reported_payments WHERE target_kind='service' AND target_id=$1 AND status='approved'",[p.target_id])).n);ensure(n+Number(p.amount)<=Number(a.total),'El pago supera el saldo');}
+   if(p.target_kind==='invoice')await collectionMutation(adapter,{action:'payment',data:{id:p.id,invoiceId:p.target_id,amount:Number(p.amount),paid_on:p.paid_on,reference:p.reference,note:p.note}},actor);
+   if(p.target_kind==='advance')await collectionMutation(adapter,{action:'advancePayment',data:{...p.payload,id:p.id,paid_on:p.paid_on,reference:p.reference,note:p.note}},actor);
+   if(p.target_kind==='invoice')await tx.query('INSERT INTO reported_payment_allocations(report_id,payment_id) VALUES($1,$1)' ,[p.id]);
+   if(p.target_kind==='advance'){const event=await one(tx,"SELECT payload FROM customer_events WHERE type='advance_payment' AND payload->>'operationId'=$1",[p.id]);for(const item of event.payload.allocations)await tx.query('INSERT INTO reported_payment_allocations(report_id,payment_id) VALUES($1,$2)',[p.id,item.paymentId]);}
+  }
+  if(d.status==='reversed'&&p.target_kind!=='service'){
+   const ids=p.target_kind==='invoice'?[p.id]:((await one(tx,"SELECT payload FROM customer_events WHERE type='advance_payment' AND payload->>'operationId'=$1",[p.id]))?.payload.allocations||[]).map(a=>a.paymentId).filter(Boolean);
+   for(const key of ids){if(!(await one(tx,'SELECT id FROM payments WHERE reverses=$1',[key])))await collectionMutation(adapter,{action:'reversePayment',data:{id:randomUUID(),paymentId:key,date:todayCL(),reason:d.reason}},actor);}
+  }
+  await tx.query('UPDATE reported_payments SET status=$2,reviewed_by=$3,reason=$4,reviewed_at=now(),reversed_on=$5 WHERE id=$1',[p.id,d.status,actor,d.reason,d.status==='reversed'?todayCL():null]);await audit(tx,p.id,b.action,actor,{before:p.status,after:d.status},d.reason);return;
+ }
+ throw new DomainError('Operación de servicios no reconocida');
+});}
