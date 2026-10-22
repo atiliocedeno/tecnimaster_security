@@ -159,3 +159,13 @@ COBRANZA_TEST_IMPORTS=true npm run dev
 ```
 
 En PowerShell: `$env:COBRANZA_TEST_IMPORTS="true"; npm run dev`. Al terminar, elimina esa variable de la sesión (`Remove-Item Env:COBRANZA_TEST_IMPORTS` en PowerShell). En Vercel, agrega la variable al entorno del despliegue y haz Redeploy.
+
+### Cargar la demo integral
+
+Con `COBRANZA_TEST_IMPORTS=true`, entra como administrador a **Resumen → Cargar demo completa**. No necesitas subir un archivo. Se agregan 320 clientes de prueba relacionados con vehículos, seis meses de mensualidades, renovaciones, reinstalaciones, 320 citas, pagos y comprobantes PDF rotulados FICTICIO - SIN VALIDEZ. Incluye estados administrativos, retiros y reactivaciones, cargos pagados, parciales, vencidos, pendientes, por revisar y anulados; adelantos de 1, 3, 6 y 12 meses; citas en los cinco estados y pagos pendientes, aprobados, rechazados y revertidos con los cuatro métodos.
+
+Cada petición guarda un cliente y sus relaciones en una transacción. La pantalla muestra progreso y permite pausar después del lote en curso. Si cierras la página o hay un error de red, vuelve a pulsar Reanudar: consulta el progreso guardado antes de continuar. Dos cargas simultáneas se serializan. Los IDs usan el prefijo `demo-full-v1`, independiente de los archivos QA anteriores. No se sobrescriben clientes, pagos ni ajustes del catálogo. Si un servicio está desactivado, el lote se detiene sin modificarlo.
+
+La fecha de referencia se fija al comenzar la primera carga. Los estados basados en vencimientos pueden cambiar con el paso del tiempo. Los clientes no tienen teléfonos de contacto y usan correos `example.invalid`; las citas usan un número reservado de ficción. No se envían mensajes ni correos. Los documentos simulan estados de entrega sin envío real. Los pagos electrónicos llevan una evidencia ficticia. Los datos se conservan al desactivar el modo de pruebas; esta función no incluye borrado ni reinicio.
+
+La base compartida muestra en sus métricas tanto la información existente como la demo. Úsala exclusivamente con datos ficticios. El botón aparece solo en Resumen; el backend exige la misma variable, una sesión válida y la protección de origen y cabecera. No requiere migración adicional: utiliza las tablas existentes y registra el progreso en `imports`.

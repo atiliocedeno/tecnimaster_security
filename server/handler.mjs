@@ -1,3 +1,4 @@
+import {demoStatus,demoStep} from './demo-loader.mjs';
 import {z} from 'zod';
 import {serviceData,serviceMutation,evidenceData} from './services.mjs';
 import {collectionsData,collectionMutation,DomainError} from './collections.mjs';
@@ -25,6 +26,7 @@ export function createHandler(db,config=process.env){
    }
    if(!authenticated)return reply({error:'Inicia sesión para acceder a Cobranza.'},401);
    if(req.method==='GET'){
+    if(action==='demoStatus'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStatus(db));}
     if(action==='services')return reply(await serviceData(db));
     if(action==='evidence')return reply(await evidenceData(db,new URL(req.url).searchParams.get('id')));
     const params=new URL(req.url).searchParams;
@@ -33,6 +35,7 @@ export function createHandler(db,config=process.env){
     return reply({...await collectionsData(db,{scope,clientId}),testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
    }
    const b=z.object({action:z.string(),data:z.unknown().optional(),id:z.unknown().optional()}).parse(await req.json());
+   if(b.action==='demoLoad'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStep(db,config.COBRANZA_USERNAME));}
    if(b.action==='reversePayment'&&b.data?.paymentId){const found=await db.query('SELECT report_id AS reported_payment_id FROM reported_payment_allocations WHERE payment_id=$1',[b.data.paymentId]);if(found.rows[0]?.reported_payment_id)throw new DomainError('Reversa este pago desde Pagos por validar para conservar vinculada su evidencia.',409);}
    if(b.action.startsWith('service.'))await serviceMutation(db,b,config.COBRANZA_USERNAME);
    else await collectionMutation(db,b,config.COBRANZA_USERNAME,{testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
