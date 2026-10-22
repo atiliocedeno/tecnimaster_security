@@ -38,7 +38,7 @@ export async function collectionsData(db,{scope="full",clientId=""}={}){
  return {clients:detail?clients.rows.filter(c=>c.id===clientId):clients.rows,invoices:overview?invoices.rows.map(({lines,...i})=>i):invoices.rows,vehicles:vehicles.rows,payments:payments.rows,events:events.rows,settings:settings.rows[0],contactWarnings,imported:imports.rows.length>0,sourceCount:267};
 }
 
-export async function collectionMutation(db,b,actor){
+export async function collectionMutation(db,b,actor,{testImportsEnabled=false}={}){
  return transaction(db,async tx=>{
   if(b.action==='deleteClient'||b.action==='deleteInvoice')throw new DomainError('No se permite eliminar historia. Usa Retirar cliente o Anular cargo.',409);
   if(b.action==='client'){
@@ -184,13 +184,16 @@ export async function collectionMutation(db,b,actor){
    await tx.query('UPDATE invoices SET issued_on=$2,document_ref=$3,delivery_channel=$4,delivery_status=$5,delivered_on=$6,version=version+1 WHERE id=$1',[i.id,d.issued_on,d.document_ref,d.delivery_channel,d.delivery_status,d.delivered_on]);
    await event(tx,i.clientId,'document',d.notes||'Registro manual de documento y entrega',{before:i,after:d},actor,d.delivered_on??todayCL());return;
   }
-  if(b.action==='import'){
+  if(b.action==='import'||b.action==='importTest'){
+   const testImport=b.action==='importTest';
+   ensure(!testImport||testImportsEnabled,'Importaciones de prueba deshabilitadas',403);
    const rows=z.array(z.object({id,name:z.string().trim().min(2).max(200),phone:z.string().max(100),cars:z.string().max(80),amount:clp,paid:clp,sourceStatus:z.string().max(200),notes:z.string().max(5000),sourceRow:z.number().int().positive()}).refine(i=>i.paid<=i.amount)).min(1).max(2000).parse(b.data);
    ensure(new Set(rows.map(c=>c.id)).size===rows.length,'Identificadores duplicados en el archivo');
    // Serialize imports without silently merging any client or changing existing IDs.
    await tx.query('LOCK TABLE imports IN EXCLUSIVE MODE');
-   ensure(!(await one(tx,'SELECT id FROM imports WHERE id=$1',['sep2026'])),'Esta hoja ya fue importada',409);
+   ensure(testImport||!(await one(tx,'SELECT id FROM imports WHERE id=$1',['sep2026'])),'Esta hoja ya fue importada',409);
    for(const c of rows){
+    if(testImport)ensure(/^qa-caso-[0-9]{3}$/.test(c.id)&&/^Prueba [0-9]{3} - /.test(c.name)&&c.notes.startsWith('DATOS FICTICIOS.')&&['','NO-VALIDO'].includes(c.phone),'Solo se admite el archivo de casos ficticios sin teléfonos reales');
     const old=await one(tx,'SELECT id FROM clients WHERE id=$1',[c.id]);
     ensure(!old,'Hay una importación previa o parcial. Revisa los registros existentes antes de importar.',409);
     const match=await one(tx,'SELECT id FROM clients WHERE lower(trim(name))=lower(trim($1))',[c.name]);ensure(!match,'Nombre repetido en la importación o cartera. Revisa la referencia sin fusionar clientes.',409);
@@ -199,7 +202,7 @@ export async function collectionMutation(db,b,actor){
     await tx.query('INSERT INTO invoices(id,"clientId",period,due,amount,paid,review,"sourceStatus") VALUES($1,$1,$2,$3,$4,$5,1,$6)',[c.id,'2026-09','2026-09-30',c.amount,c.paid,c.sourceStatus]);
     await event(tx,c.id,'imported','Importación pendiente de revisión; no se inventan fechas de pago ni retiro',{sourceRow:c.sourceRow,sourceStatus:c.sourceStatus,openingPaid:c.paid},actor);
    }
-   await tx.query('INSERT INTO imports(id) VALUES($1)',['sep2026']);return;
+   await tx.query('INSERT INTO imports(id) VALUES($1)',[testImport?'test-'+randomUUID():'sep2026']);return;
   }
   throw new DomainError('Acción no válida');
  });

@@ -30,12 +30,12 @@ export function createHandler(db,config=process.env){
     const params=new URL(req.url).searchParams;
     const scope=z.enum(['full','overview','client','payments']).parse(params.get('scope')||'full');
     const clientId=scope==='client'?z.string().min(1).max(200).parse(params.get('clientId')):'';
-    return reply(await collectionsData(db,{scope,clientId}));
+    return reply({...await collectionsData(db,{scope,clientId}),testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
    }
    const b=z.object({action:z.string(),data:z.unknown().optional(),id:z.unknown().optional()}).parse(await req.json());
    if(b.action==='reversePayment'&&b.data?.paymentId){const found=await db.query('SELECT report_id AS reported_payment_id FROM reported_payment_allocations WHERE payment_id=$1',[b.data.paymentId]);if(found.rows[0]?.reported_payment_id)throw new DomainError('Reversa este pago desde Pagos por validar para conservar vinculada su evidencia.',409);}
    if(b.action.startsWith('service.'))await serviceMutation(db,b,config.COBRANZA_USERNAME);
-   else await collectionMutation(db,b,config.COBRANZA_USERNAME);
+   else await collectionMutation(db,b,config.COBRANZA_USERNAME,{testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
    return reply({ok:true});
   }catch(e){if(e instanceof DomainError)return reply({error:e.message},e.status);if(e.code==='23505')return reply({error:'Ya existe ese registro, patente o referencia de pago. Revisa antes de repetir.'},409);if(['42P01','42703'].includes(e.code))return reply({error:'Falta aplicar la migración de Cobranza. Consulta la guía antes de continuar.'},503);if(e instanceof z.ZodError)return reply({error:'Revisa los campos: '+e.issues.map(x=>x.message).join(', ')},400);console.error('Cobranza request failed',e.code||e.name);return reply({error:'No se pudo completar la operación. Comprueba la configuración de la base de datos.'},500)}
  }

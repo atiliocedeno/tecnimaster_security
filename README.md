@@ -9,13 +9,14 @@ Homepage y módulo React de Cobranza en `/cobranza/`: clientes, mensualidades, p
 - Para compartir la demo: `cloudflared` instalado y conexión a internet.
 - En desarrollo se utiliza PGlite (PostgreSQL embebido); no necesitas instalar un servidor PostgreSQL.
 
-En este equipo:
+## Obtener el proyecto en tu equipo
 
 ```bash
-cd /Users/atilio/Documents/Codex/2026-10-16/n/outputs/tecnimaster_security
+git clone https://github.com/atiliocedeno/tecnimaster_security.git
+cd tecnimaster_security
 ```
 
-En otro equipo, utiliza la carpeta donde clonaste o copiaste el repositorio.
+Si ya lo tienes, abre una terminal en esa carpeta y continúa con los pasos siguientes. **Para trabajar localmente no necesitas Vercel, Neon, Cloudflare ni `DATABASE_URL`.** PGlite guarda los datos en `.data/cobranza`.
 
 ## 1. Instalar dependencias
 
@@ -97,7 +98,7 @@ npm run build
 node tests/public-preview.mjs
 ```
 
-Abre <http://127.0.0.1:8791/cobranza/>. Esta instancia sirve Cobranza y redirige `/` al módulo. Para probar también el homepage usa el servidor de desarrollo en 8787.
+Abre <http://127.0.0.1:8791/cobranza/>. Esta instancia sirve el homepage en `/` y Cobranza en `/cobranza/`, utilizando los archivos compilados en `dist`.
 
 ## 6. Generar un enlace público temporal
 
@@ -169,8 +170,24 @@ output/pdf/      Manuales generados en este equipo
 
 El frontend compilado por sí solo no incluye API ni base de datos. Producción requiere PostgreSQL, variables de servidor y migraciones; consulta `COBRANZA.md`. No se modifica el despliegue de producción siguiendo las instrucciones del túnel de pruebas.
 
-## 9. Servicios, agenda y pagos con evidencia
+## Servicios, agenda y pagos con evidencia
 
 La nueva administración incluye **Servicios y agenda**, **Pagos por validar** e **Ingresos**. El catálogo contiene 16 servicios de cobro único, cotización manual por vehículo, límites configurables, pagos parciales, evidencias privadas y un desglose de mensualidades y servicios. Los pagos nuevos de la interfaz, incluidos adelantos, quedan pendientes hasta su aprobación.
 
 Consulta [la guía de esta fase](docs/SERVICIOS-Y-AGENDA.md). Aplica la migración `003_services` con el comando de migración de la sección 3 antes de usarla en una base existente. La demo aislada la aplica automáticamente a su base en memoria e incluye cinco citas ficticias. No requiere alterar `.env.local` ni la base real para probarla.
+
+### Importaciones adicionales de prueba
+
+En una base con datos ficticios, configura `COBRANZA_TEST_IMPORTS=true` en el servidor y vuelve a desplegar. Aparece el importador incluso después de la primera carga. Solo acepta casos `qa-caso-NNN`, nombres `Prueba NNN - ...`, notas que empiezan por `DATOS FICTICIOS.` y teléfonos vacíos o `NO-VALIDO`. No sobrescribe registros: un ID o nombre repetido rechaza el lote completo. Los cargos siguen pendientes de revisión y corresponden a septiembre de 2026. Para desactivarlo, elimina la variable o ponla en `false` y despliega otra vez; los datos cargados se conservan. No habilitar en bases de clientes reales.
+
+### Reiniciar una instalación local ya preparada
+
+Abre una terminal en el repositorio y ejecuta `npm run dev`. No vuelvas a ejecutar `setup` ni importes otra vez la cartera. Si actualizaste dependencias, ejecuta `npm ci`; si cambió el esquema, detén el servidor y ejecuta `npm run db:migrate -- --local` antes de reiniciar.
+
+Para probar lotes ficticios adicionales localmente sin modificar `.env.local`:
+
+```bash
+COBRANZA_TEST_IMPORTS=true npm run dev
+```
+
+En PowerShell: `$env:COBRANZA_TEST_IMPORTS="true"; npm run dev`. Al terminar, elimina esa variable de la sesión (`Remove-Item Env:COBRANZA_TEST_IMPORTS` en PowerShell). En Vercel, agrega la variable al entorno del despliegue y haz Redeploy. La demo aislada de 8791 mantiene bloqueada toda importación; usa el desarrollo normal de 8787 o la base ficticia de Vercel para estos lotes.
