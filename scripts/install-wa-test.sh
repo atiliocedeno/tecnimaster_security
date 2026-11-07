@@ -18,7 +18,7 @@ After=network.target
 [Service]
 DynamicUser=yes
 EnvironmentFile=/root/tec-wa.env
-ExecStart=/snap/bin/node /opt/tec-wa/webhook.mjs
+ExecStart=/snap/node/current/bin/node /opt/tec-wa/webhook.mjs
 Restart=on-failure
 [Install]
 WantedBy=multi-user.target
