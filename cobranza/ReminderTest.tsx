@@ -18,7 +18,7 @@ export function ReminderTest({id,eligible,message,template=false}:{id:string;eli
     finally {setBusy(false);}
   }
   useEffect(()=>{void refresh();},[id]);
-  return <section><strong>WhatsApp de prueba</strong><p role="status">{labels[status] || 'Consultando estado…'}</p>
-    {eligible && ['none','rejected'].includes(status) && <button disabled={busy} onClick={()=>refresh(true)}>{template?'Enviar plantilla al número de prueba':message===undefined?'Enviar recordatorio al número de prueba':'Enviar por API al número de prueba'}</button>}
+  return <section className="reminder-controls"><strong>Envío desde TecniMaster</strong><p role="status">{labels[status] || 'Consultando estado…'}</p>
+    {eligible && ['none','rejected'].includes(status) && <button className="primary" disabled={busy} onClick={()=>refresh(true)}>{template?'Enviar plantilla al número de prueba':message===undefined?'Enviar recordatorio al número de prueba':'Enviar por API al número de prueba'}</button>}
     <button disabled={busy} onClick={()=>refresh()}>Actualizar estado</button>{error&&<p role="alert">{error}</p>}</section>;
 }
