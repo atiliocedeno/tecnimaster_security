@@ -2,11 +2,17 @@ import React,{useState} from 'react';
 import {MessageCircle} from 'lucide-react';
 import {Client,Invoice,debt,money,phoneValid} from './logic';
 import {phoneInfo} from './calculations.mjs';
+import {templateText,upcomingMonthly,reminderValues} from './monthly-template.mjs';
 import {ReminderTest} from './ReminderTest';
 import {Modal} from './Modal';
 export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,testRecipient}:{testRecipient?:string;clients:Client[];invoices:Invoice[];ids:string[]|null;period:string;onClose:()=>void;onCorrect:(c:Client)=>void}){
  const [template,setTemplate]=useState('Hola {nombre}, te recordamos que tienes mensualidades pendientes por {monto}, correspondientes a {periodos}. ¿Nos puedes confirmar tu fecha de pago? Si ya pagaste, por favor envíanos el comprobante. Gracias.');
  const [custom,setCustom]=useState<Record<string,string>>({}),[opened,setOpened]=useState<string[]>([]),[group,setGroup]=useState('ready'),[page,setPage]=useState(1);
+ const [cargo,setCargo]=useState('');
+ const selectedClient=ids?.length===1?clients.find(c=>c.id===ids[0]):undefined;
+ const canTemplate=testRecipient && selectedClient?.active && ['whatsapp','both'].includes(selectedClient.delivery_method||'whatsapp') && phoneInfo(selectedClient.whatsapp||selectedClient.phone).normalized==='+'+testRecipient;
+ const upcoming=canTemplate?invoices.filter(i=>i.clientId===selectedClient?.id && upcomingMonthly(i)):[];
+ const selectedBill=upcoming.find(i=>i.id===cargo)??upcoming[0];
  const recipients=clients.filter(c=>ids===null||ids.includes(c.id)).map(c=>{
   const bills=invoices.filter(i=>i.clientId===c.id),amount=bills.reduce((s,i)=>s+debt(i),0);
   const reason=!c.active?'Cliente retirado':bills.some(i=>i.review)?'Tiene cargos por revisar':!['whatsapp','both'].includes(c.delivery_method||'whatsapp')?'Canal preferido no habilita WhatsApp':!phoneValid(c.whatsapp||c.phone)?'Falta un teléfono internacional válido':'';
@@ -17,6 +23,10 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
  const enabled=recipients.filter(r=>!r.reason),blocked=recipients.filter(r=>r.reason);
  const list=group==='ready'?enabled:blocked,pages=Math.max(1,Math.ceil(list.length/10)),current=Math.min(page,pages);
  return <Modal title="Enviar mensaje por WhatsApp" onClose={onClose}><p>Periodo: {period} · {recipients.length} destinatarios · {enabled.length} listos · {blocked.length} necesitan corrección.</p>
+ {canTemplate&&selectedClient&&<section className="notes"><h3>Recordatorio de mensualidad por plantilla</h3>
+ {selectedBill?<><label>Mensualidad <select value={selectedBill.id} onChange={e=>setCargo(e.target.value)}>{upcoming.map(i=><option key={i.id} value={i.id}>{i.period} · {money(i.amount-i.paid)}</option>)}</select></label>
+ <p>{templateText.replace(/\{\{(\d)\}\}/g,(_,index)=>reminderValues(selectedClient.name,selectedBill)[Number(index)-1])}</p>
+ <ReminderTest key={selectedBill.id} id={selectedBill.id} eligible template/></>:<p>Selecciona un período con una mensualidad revisada, con saldo y con vencimiento de hoy en adelante.</p>}</section>}
  {ids===null&&<p className="notes">Alcance: toda la cartera activa con mora del periodo. Se ignoran la búsqueda y los filtros del directorio.</p>}
  <p>Revisa el mensaje de cada destinatario antes de enviarlo.</p>
  <div className="tabs"><button className={group==='ready'?'selected':''} onClick={()=>{setGroup('ready');setPage(1)}}>Listos para contactar ({enabled.length})</button><button className={group==='blocked'?'selected':''} onClick={()=>{setGroup('blocked');setPage(1)}}>Necesitan corrección ({blocked.length})</button></div>

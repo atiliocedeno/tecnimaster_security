@@ -47,3 +47,28 @@ test('composer sends edited text only for an invoice belonging to the authorized
     assert.equal(calls,1);
   } finally {await db.close();}
 });
+
+test('business-initiated monthly reminder uses the registered Spanish template and invoice values',async()=>{
+  const db=new PGlite();
+  try {
+    await migrate(db);
+    await db.query("INSERT INTO clients(id,name,phone,cars,notes) VALUES('monthly','Andrea','+56 9 1111 2222','','')");
+    await db.query(`INSERT INTO invoices(id,"clientId",period,due,amount) VALUES('future','monthly','2099-12','2099-12-05',17850),('past','monthly','2000-01','2000-01-05',17850)`);
+    const config={WHATSAPP_TEST_ENABLED:'true',WHATSAPP_TEST_RECIPIENT:'56911112222',WHATSAPP_TEST_ACCESS_TOKEN:'test'};
+    let calls=0;
+    async function transport(url,options){
+      calls++;
+      const p=JSON.parse(options.body);
+      assert.equal(p.type,'template');
+      assert.equal(p.template.name,'tecnimaster_recordatorio_mensualidad');
+      assert.equal(p.template.language.code,'es');
+      assert.deepEqual(p.template.components[0].parameters.map(i=>i.text),['Andrea','2099-12','$17.850','05/12/2099']);
+      return Response.json({messages:[{id:'wamid.monthly'}]});
+    }
+    await assert.rejects(sendReminder(db,config,'past',transport,undefined,true),/mensualidad vigente/);
+    await assert.rejects(sendReminder(db,{...config,WHATSAPP_TEST_RECIPIENT:'56922223333'},'future',transport,undefined,true));
+    assert.equal((await sendReminder(db,config,'future',transport,undefined,true)).status,'accepted');
+    await sendReminder(db,config,'future',transport,undefined,true);
+    assert.equal(calls,1);
+  }finally{await db.close();}
+});
