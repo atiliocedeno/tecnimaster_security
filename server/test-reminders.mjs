@@ -1,4 +1,5 @@
 import {randomUUID} from 'node:crypto';
+import {phoneInfo} from '../cobranza/calculations.mjs';
 import {DomainError} from './collections.mjs';
 
 const sender = '1448050945057871';
@@ -10,19 +11,21 @@ export async function reminderState(db, id) {
   const result = await db.query('SELECT status, wamid FROM whatsapp_test_reminders WHERE invoice_id=$1',[id]);
   return result.rows[0] ?? {status:'none'};
 }
-export async function sendReminder(db, config, id, transport=fetch) {
+export async function sendReminder(db, config, id, transport=fetch, message) {
   if (!sandboxEnabled(config)) throw new DomainError('Prueba deshabilitada',403);
   const to = config.WHATSAPP_TEST_RECIPIENT;
   if (!/^[1-9]\d{7,14}$/.test(to ?? '') || !config.WHATSAPP_TEST_ACCESS_TOKEN)
     throw new DomainError('Falta configurar el destinatario autorizado o el token de prueba.',503);
-  const bill = (await db.query('SELECT * FROM invoices WHERE id=$1',[id])).rows[0];
-  if (!bill || !/^demo-full-v1-\d{3}$/.test(bill.clientId) || bill.review || bill.voided || bill.amount<=bill.paid)
-    throw new DomainError('Selecciona un cargo ficticio pendiente y revisado.',400);
+  const bill = (await db.query('SELECT i.*,c.whatsapp,c.phone FROM invoices i JOIN clients c ON c.id=i."clientId" WHERE i.id=$1',[id])).rows[0];
+  const matchesRecipient = bill && phoneInfo(bill.whatsapp || bill.phone || '').normalized === '+' + to;
+  const demo = bill && /^demo-full-v1-\d{3}$/.test(bill.clientId);
+  if ((!matchesRecipient && (!demo || message !== undefined)) || bill.review || bill.voided || bill.amount<=bill.paid)
+    throw new DomainError('Se requiere un cargo revisado con saldo y un destinatario autorizado para pruebas.',400);
   const correlation = randomUUID();
   const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation) VALUES($1,$2) ON CONFLICT(invoice_id) DO UPDATE SET correlation=$2,status=\'pending\',progress=0 WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation]);
   if (!reserved.rows.length) return reminderState(db,id);
   const payload = {messaging_product:'whatsapp',to,type:'text',biz_opaque_callback_data:correlation,
-    text:{body:'Prueba TecniMaster. Recordatorio de cobro ficticio del periodo '+bill.period+' por '+(bill.amount-bill.paid)+' CLP. No requiere pago.'}};
+    text:{body:message !== undefined ? '[Prueba TecniMaster] '+message : 'Prueba TecniMaster. Recordatorio de cobro ficticio del periodo '+bill.period+' por '+(bill.amount-bill.paid)+' CLP. No requiere pago.'}};
   let response, result;
   try {
     response = await transport('https://graph.facebook.com/v25.0/'+sender+'/messages',{

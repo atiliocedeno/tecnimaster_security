@@ -26,3 +26,24 @@ test('one fictional reminder survives concurrent sends and duplicate, out-of-ord
     assert.deepEqual(await reminderState(db,'prueba'),{status:'read',wamid:'wamid.test'});
   } finally {await db.close();}
 });
+
+test('composer sends edited text only for an invoice belonging to the authorized phone', async()=>{
+  const db=new PGlite();
+  try {
+    await migrate(db);
+    await db.query("INSERT INTO clients(id,name,phone,cars,notes) VALUES('manual','Prueba','+56 9 1111 2222','','')");
+    await db.query(`INSERT INTO invoices(id,"clientId",period,due,amount) VALUES('cargo','manual','2026-10','2026-10-30',17850)`);
+    const config={WHATSAPP_TEST_ENABLED:'true',WHATSAPP_TEST_RECIPIENT:'56911112222',WHATSAPP_TEST_ACCESS_TOKEN:'local-test'};
+    let calls=0;
+    async function transport(url,options){
+      calls++;
+      const payload=JSON.parse(options.body);
+      assert.equal(payload.to,config.WHATSAPP_TEST_RECIPIENT);
+      assert.equal(payload.text.body,'[Prueba TecniMaster] Texto editado');
+      return Response.json({messages:[{id:'wamid.composer'}]});
+    }
+    await assert.rejects(sendReminder(db,{...config,WHATSAPP_TEST_RECIPIENT:'56933334444'},'cargo',transport,'Texto editado'),/destinatario autorizado/);
+    assert.equal((await sendReminder(db,config,'cargo',transport,'Texto editado')).status,'accepted');
+    assert.equal(calls,1);
+  } finally {await db.close();}
+});

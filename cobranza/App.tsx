@@ -81,6 +81,6 @@ export default function App(){
  }} client={data.clients.find(c=>c.id===detail.id)||detail} data={data} onClose={()=>setDetail(null)} onEdit={()=>setClient(data.clients.find(c=>c.id===detail.id)||detail)} onInvoice={openInvoice} onNew={()=>newBill(data.clients.find(c=>c.id===detail.id)||detail)} save={mutate}/>}
  {client&&<ClientForm client={client} onClose={()=>setClient(null)} save={mutate}/>}
  {bill&&<InvoiceForm invoice={data.invoices.find(i=>i.id===bill.id)||bill} client={data.clients.find(c=>c.id===bill.clientId)!} data={data} onClose={()=>setBill(null)} save={mutate}/>}
- {wa&&<div hidden={!!client}><WhatsAppComposer clients={data.clients} invoices={invoices} ids={waIds} period={period} onCorrect={c=>setClient(c)} onClose={()=>setWa(false)}/></div>}
+ {wa&&<div hidden={!!client}><WhatsAppComposer testRecipient={data.waTestEnabled?data.waTestRecipient:undefined} clients={data.clients} invoices={invoices} ids={waIds} period={period} onCorrect={c=>setClient(c)} onClose={()=>setWa(false)}/></div>}
  </div></FeedbackContext.Provider>
 }
