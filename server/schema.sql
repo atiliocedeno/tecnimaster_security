@@ -3,3 +3,11 @@ CREATE TABLE IF NOT EXISTS invoices (id TEXT PRIMARY KEY,"clientId" TEXT NOT NUL
 CREATE INDEX IF NOT EXISTS invoices_client ON invoices("clientId");
 CREATE TABLE IF NOT EXISTS imports(id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS login_limits(id TEXT PRIMARY KEY,attempts INTEGER NOT NULL,reset_at BIGINT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS whatsapp_test_reminders (
+ invoice_id TEXT PRIMARY KEY REFERENCES invoices(id),
+ correlation TEXT UNIQUE NOT NULL,
+ wamid TEXT UNIQUE,
+ status TEXT NOT NULL DEFAULT 'pending',
+ progress INTEGER NOT NULL DEFAULT 0
+);

@@ -36,6 +36,11 @@ async function receive(req, res) {
   let event;
   try { event = JSON.parse(body); } catch { return reply(400); }
   if (event?.object !== 'whatsapp_business_account' || !Array.isArray(event.entry)) return reply(400);
+  if (process.env.WHATSAPP_TEST_ENABLED === 'true') {
+    const {database} = await import('./db.mjs');
+    const {applyStatuses} = await import('./test-reminders.mjs');
+    await applyStatuses(database(),event);
+  }
   console.info('WhatsApp test webhook received', { entries: event.entry.length });
   return reply(200);
 }
