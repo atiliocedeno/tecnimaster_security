@@ -9,9 +9,19 @@ const ranks = {sent: 2, failed: 3, delivered: 4, read: 5};
 export function sandboxEnabled(config) {
   return config.WHATSAPP_TEST_ENABLED === 'true';
 }
+function metaError(error) {
+  if (!error) return null;
+  const code = Number.isSafeInteger(error.code) ? error.code : null;
+  const description = [error.error_data?.details,error.message,error.title]
+    .find(value=>typeof value==='string' && value.trim());
+  if (code===null && !description) return null;
+  return JSON.stringify({code,description:description?.trim().slice(0,600) || null});
+}
 export async function reminderState(db, id) {
-  const result = await db.query('SELECT status, wamid FROM whatsapp_test_reminders WHERE invoice_id=$1',[id]);
-  return result.rows[0] ?? {status:'none'};
+  const result = await db.query('SELECT status, wamid, meta_error FROM whatsapp_test_reminders WHERE invoice_id=$1',[id]);
+  if (!result.rows.length) return {status:'none'};
+  const {status,wamid,meta_error}=result.rows[0];
+  return meta_error ? {status,wamid,metaError:meta_error} : {status,wamid};
 }
 export async function sendReminder(db, config, id, transport=fetch, message, template=false) {
   if (!sandboxEnabled(config)) throw new DomainError('Prueba deshabilitada',403);
@@ -26,7 +36,7 @@ export async function sendReminder(db, config, id, transport=fetch, message, tem
   if (template && (!matchesRecipient || !bill.active || !['whatsapp','both'].includes(bill.delivery_method || 'whatsapp') || !upcomingMonthly(bill)))
     throw new DomainError('Elige una mensualidad vigente del destinatario autorizado para esta prueba.',400);
   const correlation = randomUUID();
-  const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation) VALUES($1,$2) ON CONFLICT(invoice_id) DO UPDATE SET correlation=$2,status=\'pending\',progress=0 WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation]);
+  const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation) VALUES($1,$2) ON CONFLICT(invoice_id) DO UPDATE SET correlation=$2,status=\'pending\',progress=0,meta_error=NULL WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation]);
   if (!reserved.rows.length) return reminderState(db,id);
   const envelope={messaging_product:'whatsapp',to,biz_opaque_callback_data:correlation};
   const payload = template ? {...envelope,type:'template',template:{name:templateName,language:{code:'es'},
@@ -42,7 +52,7 @@ export async function sendReminder(db, config, id, transport=fetch, message, tem
   const wamid = result?.messages?.[0]?.id;
   const status = response?.ok && typeof wamid==='string' ? 'accepted' :
     response?.status>=400 && response.status<500 && result?.error ? 'rejected' : 'unknown';
-  await db.query('UPDATE whatsapp_test_reminders SET status=$2,wamid=$3,progress=1 WHERE correlation=$1 AND progress=0',[correlation,status,status==='accepted'?wamid:null]);
+  await db.query('UPDATE whatsapp_test_reminders SET status=$2,wamid=$3,progress=1,meta_error=$4::jsonb WHERE correlation=$1 AND progress=0',[correlation,status,status==='accepted'?wamid:null,status==='rejected'?metaError(result.error):null]);
   return reminderState(db,id);
 }
 export async function applyStatuses(db,event) {
@@ -51,8 +61,8 @@ export async function applyStatuses(db,event) {
     if (change.field!=='messages' || value?.metadata?.phone_number_id!==sender) continue;
     for (const item of value.statuses ?? []) {
       if (!Object.hasOwn(ranks,item.status) || typeof item.id!=='string') continue;
-      await db.query('UPDATE whatsapp_test_reminders SET wamid=$1,status=$2,progress=$3 WHERE (wamid=$1 OR (wamid IS NULL AND correlation=$4)) AND progress<$3',
-        [item.id,item.status,ranks[item.status],item.biz_opaque_callback_data ?? null]);
+      await db.query('UPDATE whatsapp_test_reminders SET wamid=$1,status=$2,progress=$3,meta_error=$5::jsonb WHERE (wamid=$1 OR (wamid IS NULL AND correlation=$4)) AND (progress<$3 OR (progress=$3 AND meta_error IS NULL AND $5::jsonb IS NOT NULL))',
+        [item.id,item.status,ranks[item.status],item.biz_opaque_callback_data ?? null,item.status==='failed'?metaError(item.errors?.[0]):null]);
     }
   }
 }

@@ -72,3 +72,35 @@ test('business-initiated monthly reminder uses the registered Spanish template a
     assert.equal(calls,1);
   }finally{await db.close();}
 });
+
+test('failed delivery keeps its diagnosis across duplicate and late callbacks', async()=>{
+  const db=new PGlite();
+  try{
+    await migrate(db);
+    await db.query("INSERT INTO clients(id,name,phone,cars,notes) VALUES('test','Test','','','')");
+    await db.query(`INSERT INTO invoices(id,"clientId",period,due,amount) VALUES('bill','test','2026-11','2026-11-30',1)`);
+    await db.query("INSERT INTO whatsapp_test_reminders(invoice_id,correlation,wamid,status,progress) VALUES('bill','test','wamid.test','failed',3)");
+    const update=(status,errors)=>applyStatuses(db,{entry:[{changes:[{field:'messages',value:{metadata:{phone_number_id:'1448050945057871'},statuses:[{id:'wamid.test',status,errors}]}}]}]});
+    const failure={code:131000,title:'Example',error_data:{details:'Fixture detail'}};
+    await update('failed',[failure]);
+    await update('failed',[]);
+    await update('sent');
+    assert.deepEqual((await reminderState(db,'bill')).metaError,{code:131000,description:'Fixture detail'});
+    await update('delivered');
+    assert.deepEqual(await reminderState(db,'bill'),{status:'delivered',wamid:'wamid.test'});
+  }finally{await db.close();}
+});
+
+test('API rejection exposes Meta code and a successful retry clears it', async()=>{
+  const db=new PGlite();
+  try{
+    await migrate(db);
+    await db.query("INSERT INTO clients(id,name,phone,cars,notes) VALUES('demo-full-v1-001','Test','','','')");
+    await db.query(`INSERT INTO invoices(id,"clientId",period,due,amount) VALUES('bill','demo-full-v1-001','2026-11','2026-11-30',1)`);
+    const config={WHATSAPP_TEST_ENABLED:'true', WHATSAPP_TEST_RECIPIENT:'15555550123', WHATSAPP_TEST_ACCESS_TOKEN:'test'};
+    const rejected=await sendReminder(db,config,'bill',async()=>Response.json({error:{code:190,message:'Expired test token'}},{status:401}));
+    assert.deepEqual(rejected.metaError,{code:190,description:'Expired test token'});
+    const accepted=await sendReminder(db,config,'bill',async()=>Response.json({messages:[{id:'wamid.retry'}]}));
+    assert.deepEqual(accepted,{status:'accepted',wamid:'wamid.retry'});
+  }finally{await db.close();}
+});

@@ -11,3 +11,5 @@ CREATE TABLE IF NOT EXISTS whatsapp_test_reminders (
  status TEXT NOT NULL DEFAULT 'pending',
  progress INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS meta_error JSONB;
