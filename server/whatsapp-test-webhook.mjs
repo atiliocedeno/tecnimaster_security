@@ -36,6 +36,15 @@ async function receive(req, res) {
   let event;
   try { event = JSON.parse(body); } catch { return reply(400); }
   if (event?.object !== 'whatsapp_business_account' || !Array.isArray(event.entry)) return reply(400);
+  if (process.env.WHATSAPP_FORWARD_TO_TEST_APP === 'true') {
+    // Preserve the exact bytes authenticated by Meta. A non-2xx requests a retry.
+    const upstream = await fetch('http://127.0.0.1:8787/internal/whatsapp-status', {
+      method: 'POST', headers: {'x-hub-signature-256': signature}, body,
+      redirect: 'error', signal: AbortSignal.timeout(8000)
+    });
+    if (upstream.status !== 204) return reply(503);
+    return reply(200);
+  }
   if (process.env.WHATSAPP_TEST_ENABLED === 'true') {
     const {database} = await import('./db.mjs');
     const {applyStatuses} = await import('./test-reminders.mjs');
