@@ -7,8 +7,9 @@ import {templateText,upcomingMonthly,reminderValues} from './monthly-template.mj
 import {ReminderTest} from './ReminderTest';
 import {Modal} from './Modal';
 export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,testRecipient}:{testRecipient?:string;clients:Client[];invoices:Invoice[];ids:string[]|null;period:string;onClose:()=>void;onCorrect:(c:Client)=>void}){
- const [template,setTemplate]=useState('Hola {nombre}, te recordamos que tienes mensualidades pendientes por {monto}, correspondientes a {periodos}. ¿Nos puedes confirmar tu fecha de pago? Si ya pagaste, por favor envíanos el comprobante. Gracias.');
+ const [template,setTemplate]=useState('Hola {nombre}, te escribimos desde TecniMaster sobre tu servicio. ¿Tienes alguna consulta sobre tu mensualidad?');
  const [custom,setCustom]=useState<Record<string,string>>({}),[opened,setOpened]=useState<string[]>([]),[group,setGroup]=useState('ready'),[page,setPage]=useState(1);
+ const [messageMode,setMessageMode]=useState<'monthly'|'custom'>('monthly');
  const [cargo,setCargo]=useState('');
  const selectedClient=ids?.length===1?clients.find(c=>c.id===ids[0]):undefined;
  const canTemplate=testRecipient && selectedClient?.active && ['whatsapp','both'].includes(selectedClient.delivery_method||'whatsapp') && phoneInfo(selectedClient.whatsapp||selectedClient.phone).normalized==='+'+testRecipient;
@@ -25,7 +26,8 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
  const list=selectedClient?recipients:group==='ready'?enabled:blocked,pages=Math.max(1,Math.ceil(list.length/10)),current=Math.min(page,pages);
  const individual=!!selectedClient;
  return <Modal title={individual?`Enviar mensaje a ${selectedClient.name}`:"Enviar mensajes por WhatsApp"} onClose={onClose}>{!individual&&<p>Periodo: {period} · {recipients.length} destinatarios · {enabled.length} listos · {blocked.length} necesitan corrección.</p>}
- {canTemplate&&selectedClient&&selectedBill&&<section className="notes"><h3>Recordatorio de mensualidad por plantilla</h3>
+ {selectedBill&&<div className="tabs" aria-label="Tipo de mensaje"><button type="button" aria-pressed={messageMode==='monthly'} className={messageMode==='monthly'?'selected':''} onClick={()=>setMessageMode('monthly')}>Recordatorio mensual</button><button type="button" aria-pressed={messageMode==='custom'} className={messageMode==='custom'?'selected':''} onClick={()=>setMessageMode('custom')}>Mensaje personalizado</button></div>}
+ {messageMode==='monthly'&&canTemplate&&selectedClient&&selectedBill&&<section className="notes"><h3>Recordatorio de mensualidad por plantilla</h3>
  {selectedBill?<><label>Mensualidad <select value={selectedBill.id} onChange={e=>setCargo(e.target.value)}>{upcoming.map(i=><option key={i.id} value={i.id}>{i.period} · {money(i.amount-i.paid)}</option>)}</select></label>
  <p>{templateText.replace(/\{\{(\d)\}\}/g,(_,index)=>reminderValues(selectedClient.name,selectedBill)[Number(index)-1])}</p>
  <ReminderTest key={selectedBill.id} id={selectedBill.id} eligible template/></>:<p>Selecciona un período con una mensualidad revisada, con saldo y con vencimiento de hoy en adelante.</p>}</section>}
@@ -33,14 +35,15 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
 
  {!individual&&<div className="tabs"><button className={group==='ready'?'selected':''} onClick={()=>{setGroup('ready');setPage(1)}}>Listos para contactar ({enabled.length})</button><button className={group==='blocked'?'selected':''} onClick={()=>{setGroup('blocked');setPage(1)}}>Necesitan corrección ({blocked.length})</button></div>}
  {!individual&&group==='ready'&&<><label>Mensaje general<textarea rows={4} value={template} onChange={e=>setTemplate(e.target.value)}/></label><small>Variables: {'{nombre}, {monto}, {periodos}'}. Se reemplazan para cada destinatario. Los mensajes editados individualmente conservan sus cambios.</small></>}
- <div className="wa-list">{list.slice((current-1)*10,current*10).map(({c,amount,reason,message,invoice})=><article key={c.id}><strong>{c.name} <span>{money(amount)}</span></strong>{reason?<><p>{reason}</p><button onClick={()=>onCorrect(c)}>Corregir contacto de {c.name}</button><small>Para revisar cargos o reactivar, abre la ficha del cliente. Tus mensajes se conservan mientras corriges el contacto.</small></>:<><label>Mensaje para {c.name}<textarea rows={4} value={message} onChange={e=>setCustom({...custom,[c.id]:e.target.value})}/></label>{custom[c.id]!==undefined&&<button onClick={()=>setCustom(v=>{const next={...v};delete next[c.id];return next})}>Usar mensaje general</button>}{testRecipient && (phoneInfo(c.whatsapp||c.phone).normalized==='+'+testRecipient && invoice
+ {(!selectedBill||messageMode==='custom')&&<><div className="wa-list">{list.slice((current-1)*10,current*10).map(({c,amount,reason,message,invoice})=><article key={c.id}><strong>{c.name} <span>{money(amount)}</span></strong>{reason?<><p>{reason}</p><button onClick={()=>onCorrect(c)}>Corregir contacto de {c.name}</button><small>Para revisar cargos o reactivar, abre la ficha del cliente. Tus mensajes se conservan mientras corriges el contacto.</small></>:<><label>Mensaje para {c.name}<textarea rows={4} value={message} onChange={e=>setCustom({...custom,[c.id]:e.target.value})}/></label>{custom[c.id]!==undefined&&<button onClick={()=>setCustom(v=>{const next={...v};delete next[c.id];return next})}>Usar mensaje general</button>}{testRecipient && (phoneInfo(c.whatsapp||c.phone).normalized==='+'+testRecipient && invoice
  ? <><p>La API enviará este texto con el prefijo «[Prueba TecniMaster]» al número terminado en {testRecipient.slice(-4)}.</p>
  <ReminderTest key={invoice.id} id={invoice.id} eligible={!!message.trim() && message.trim().length<=4000} message={message.trim()}/>
  {message.trim().length>4000&&<p>Reduce el texto a 4000 caracteres para enviar la prueba.</p>}</>
  : <p>El envío por API está habilitado para el número de prueba terminado en {testRecipient.slice(-4)}.</p>)}
  {message.trim()?<a className="manual-chat" href={`https://wa.me/${phoneInfo(c.whatsapp||c.phone).normalized.replace('+','')}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setOpened(v=>v.includes(c.id)?v:[...v,c.id])}><MessageCircle size={16}/>{opened.includes(c.id)?'Volver a abrir WhatsApp':'Abrir chat para envío manual'}</a>:<p>Escribe un mensaje antes de abrir WhatsApp.</p>}{opened.includes(c.id)&&<small>Chat abierto; no hay confirmación de envío.</small>}</>}</article>)}</div>
- {!list.length&&(!individual||!selectedBill)&&<p>{individual?'Este cliente no tiene mensualidades vencidas en el período seleccionado.':group==='ready'?'No hay destinatarios listos. Revisa la pestaña Necesitan corrección.':'No hay contactos que corregir.'}</p>}
+ {!list.length&&(!individual||!selectedBill||messageMode==='custom')&&<p>{individual?'Este cliente no tiene mensualidades vencidas en el período seleccionado.':group==='ready'?'No hay destinatarios listos. Revisa la pestaña Necesitan corrección.':'No hay contactos que corregir.'}</p>}
  {pages>1&&<footer className="table-footer"><span>Página {current} de {pages}</span><div><button disabled={current<=1} onClick={()=>setPage(current-1)}>Anterior</button><button disabled={current>=pages} onClick={()=>setPage(current+1)}>Siguiente</button></div></footer>}
+ </>}
  {selectedClient&&testRecipient&&<details><summary>Ver conversación</summary><Conversation key={selectedClient.id} id={selectedClient.id}/></details>}
  </Modal>;
 }
