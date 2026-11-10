@@ -22,3 +22,5 @@ CREATE TABLE IF NOT EXISTS whatsapp_inbound(
  received_at TIMESTAMPTZ NOT NULL, reply_to TEXT, handled BOOLEAN NOT NULL DEFAULT false
 );
 CREATE INDEX IF NOT EXISTS whatsapp_inbound_thread ON whatsapp_inbound(phone,received_at);
+
+ALTER TABLE whatsapp_inbound ADD COLUMN IF NOT EXISTS notification_seen BOOLEAN NOT NULL DEFAULT false;

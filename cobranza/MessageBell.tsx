@@ -3,7 +3,7 @@ import {Bell} from 'lucide-react';
 import type {Client} from './logic';
 import {phoneInfo} from './calculations.mjs';
 
-type Pending={phone:string;pending:number;preview:string};
+type Pending={phone:string;pending:number;preview:string;unseen:string[]|null};
 
 export function MessageBell({clients,onOpen}:{clients:Client[];onOpen:(client:Client)=>void}){
   const [items,setItems]=useState<Pending[]>([]);
@@ -39,9 +39,27 @@ export function MessageBell({clients,onOpen}:{clients:Client[];onOpen:(client:Cl
     document.addEventListener('pointerdown',outside);document.addEventListener('keydown',escape);
     return ()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',escape);};
   },[open]);
-  const total=items.reduce((sum,r)=>sum+r.pending,0);
+  const unseen=items.flatMap(item=>item.unseen??[]);
+  const batch=JSON.stringify(unseen.slice(0,500));
+  useEffect(()=>{
+    if(!open||batch==='[]')return;
+    let active=true;
+    const ids:string[]=JSON.parse(batch);
+    const seen=new Set(ids);
+    async function acknowledge(){
+      try{
+        const response=await fetch('/api/cobranza',{method:'POST',headers:{'Content-Type':'application/json','X-Cobranza-Request':'1'},
+          body:JSON.stringify({action:'waNotificationsSeen',data:ids})});
+        if(!response.ok)throw Error();
+        if(active)setItems(rows=>rows.map(row=>({...row,unseen:row.unseen?.filter(id=>!seen.has(id))??[]})));
+      }catch{if(active)setError(true);}
+    }
+    void acknowledge();
+    return ()=>{active=false;};
+  },[batch,open]);
+  const total=unseen.length;
   return <div ref={root} className="message-bell">
-    <button ref={trigger} aria-label={`Mensajes pendientes: ${total}`} aria-expanded={open} onClick={()=>setOpen(!open)}>
+    <button ref={trigger} aria-label={`Notificaciones sin ver: ${total}`} aria-expanded={open} onClick={()=>setOpen(!open)}>
       <Bell size={20} aria-hidden="true"/>{total>0&&<b>{total>99?'99+':total}</b>}
     </button>
     {open&&<section aria-label="Notificaciones de WhatsApp"><h3>Mensajes pendientes</h3>
