@@ -48,8 +48,8 @@ export function InvoiceForm({invoice,client,data,onClose,save}:{invoice:Invoice;
  <h3>Movimientos de pago</h3>{payments.map(p=><article className="history-item" key={p.id}><strong>{p.paid_on} · {money(p.amount)}</strong><p>{p.reference} {p.note} · {p.actor}</p>{p.reported_payment_id&&<p>Pago con evidencia: consulta su revisión o reversa en Pagos por validar.</p>}{p.amount>0&&!p.reported_payment_id&&!data.payments.some(r=>r.reverses===p.id)&&<button onClick={async()=>{const why=prompt('Motivo de reversa (el pago original se conserva):');if(why&&await save({action:'reversePayment',data:{id:crypto.randomUUID(),paymentId:p.id,date:today(),reason:why}}))onClose()}}>Reversar pago</button>}</article>)}{!payments.length&&<p>No hay movimientos registrados en esta versión.</p>}</Modal>
 }
 
-export function ClientPanel({client,data,onMessage,onDemo,onClose,onEdit,onInvoice,onNew,save}:{client:Client;data:Data;onClose:()=>void;onEdit:()=>void;onMessage:()=>void;onDemo:()=>void;onInvoice:(i:Invoice)=>void;onNew:()=>void;save:Save}){
- const [tab,setTab]=useState('Cargos'),[vehicle,setVehicle]=useState<Vehicle|null>(null),[lifecycle,setLifecycle]=useState(false),[advance,setAdvance]=useState(false);
+export function ClientPanel({initialTab,client,data,onMessage,onDemo,onClose,onEdit,onInvoice,onNew,save}:{client:Client;data:Data;onClose:()=>void;onEdit:()=>void;initialTab:string;onMessage:()=>void;onDemo:()=>void;onInvoice:(i:Invoice)=>void;onNew:()=>void;save:Save}){
+ const [tab,setTab]=useState(initialTab),[vehicle,setVehicle]=useState<Vehicle|null>(null),[lifecycle,setLifecycle]=useState(false),[advance,setAdvance]=useState(false);
  const coverage=advanceCoverage(client.id,data.invoices,data.events);
  const bills=data.invoices.filter(i=>i.clientId===client.id),vehicles=data.vehicles.filter(v=>v.client_id===client.id),history=data.events.filter(e=>e.client_id===client.id),total=vehicleTotal(vehicles);
  const [selectedReminder,setSelectedReminder]=useState('');

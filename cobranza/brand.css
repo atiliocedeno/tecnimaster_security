@@ -112,3 +112,12 @@ input[type=checkbox]{accent-color:var(--tm-red)}
 }
 .client-metadata{padding:12px 0;border-block:1px solid var(--tm-border);margin:16px 0}
 .client-metadata summary{cursor:pointer;font-weight:600}
+
+.heading-actions{display:flex;align-items:center;gap:8px}
+.message-bell{position:relative}
+.message-bell>button{position:relative;min-width:44px;min-height:44px}
+.message-bell b{position:absolute;right:-4px;top:-5px;border-radius:12px;padding:2px 5px;color:white;background:var(--tm-red);font-size:11px}
+.message-bell section{position:absolute;z-index:5;top:calc(100% + 8px);right:0;width:min(320px,92vw);max-height:55vh;overflow:auto;background:white;border:1px solid var(--tm-border);box-shadow:0 8px 24px #0002;border-radius:10px;padding:16px}
+.message-bell h3{margin:0}.message-bell article{margin-top:12px;padding-top:12px;border-top:1px solid var(--tm-border)}
+.message-bell article p{overflow-wrap:anywhere;margin:5px 0 8px}
+@media(max-width:600px){.page-heading{flex-wrap:wrap}.page-heading .heading-actions{margin-left:auto}.message-bell section{right:-110px;width:min(310px,90vw)}}

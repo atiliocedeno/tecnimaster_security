@@ -19,6 +19,7 @@ export function Conversation({id,onReview}:{id:string;onReview?:(invoice:string|
     try{
       const res=await fetch('/api/cobranza',{method:'POST',headers:{'Content-Type':'application/json','X-Cobranza-Request':'1'},body:JSON.stringify({action:'waHandled',id:wamid})});
       if(!res.ok)throw Error();
+      window.dispatchEvent(new Event('wa-handled'));
       refresh(n=>n+1);
     }catch{setError('No se pudo marcar el mensaje como atendido.')}
   }

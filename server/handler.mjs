@@ -28,6 +28,12 @@ export function createHandler(db,config=process.env){
    }
    if(!authenticated)return reply({error:'Inicia sesión para acceder a Cobranza.'},401);
    if(req.method==='GET'){
+    if(action==='waPending' && sandboxEnabled(config)){
+      const {rows}=await db.query(`SELECT DISTINCT ON (phone) phone,count(*) OVER(PARTITION BY phone)::int AS pending,
+        left(body,100) AS preview,received_at FROM whatsapp_inbound WHERE NOT handled
+        ORDER BY phone,received_at DESC,wamid DESC`);
+      return reply(rows.sort((a,b)=>new Date(b.received_at)-new Date(a.received_at)));
+    }
     if(action==='conversation' && sandboxEnabled(config))return reply(await conversation(db,new URL(req.url).searchParams.get('id')));
     if(action==='waTestState' && sandboxEnabled(config))return reply(await reminderState(db,new URL(req.url).searchParams.get('id')));
     if(action==='demoStatus'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStatus(db));}
