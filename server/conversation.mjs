@@ -13,7 +13,7 @@ export async function conversation(db,id){
     WHERE r.recipient=$1 OR (r.recipient IS NULL AND i."clientId"=$2)
     UNION ALL
     SELECT m.wamid,m.body,m.received_at,'received',i.period,'in',m.handled,i.id
-    FROM whatsapp_inbound m LEFT JOIN whatsapp_test_reminders r ON r.wamid=m.reply_to AND r.recipient=m.phone
+    FROM whatsapp_inbound m LEFT JOIN whatsapp_test_reminders r ON r.wamid=m.reply_to AND (r.recipient=m.phone OR (r.recipient IS NULL AND r.invoice_id IN (SELECT id FROM invoices WHERE "clientId"=$2)))
     LEFT JOIN invoices i ON i.id=r.invoice_id WHERE m.phone=$1
     ORDER BY at NULLS FIRST,wamid`,[phone,id]);
   return {phone,shared,messages};
