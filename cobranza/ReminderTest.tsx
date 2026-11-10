@@ -27,6 +27,6 @@ export function ReminderTest({id,eligible,message,template=false}:{id:string;eli
       ? <><strong>{metaError.code===null?'Motivo de Meta':`Código de Meta ${metaError.code}`}</strong> {metaError.description}</>
       : 'Este intento no tiene un diagnóstico de Meta registrado.'}</p>}
     {template&&quota&&<p>Cupo mensual de plantillas de TecniMaster (compartido entre todos los clientes): {quota.used} de {quota.limit} · {Math.max(0,quota.limit-quota.used)} disponibles</p>}
-    {eligible && ['none','rejected'].includes(status) && <button className="primary" disabled={busy||!!(template&&quota&&quota.used>=quota.limit)} onClick={()=>refresh(true)}>{template?'Enviar plantilla al número de prueba':message===undefined?'Enviar recordatorio al número de prueba':'Enviar por API al número de prueba'}</button>}
+    {eligible && ['none','rejected','failed'].includes(status) && <button className="primary" disabled={busy||!!(template&&quota&&quota.used>=quota.limit)} onClick={()=>refresh(true)}>{status==='failed'?'Reintentar envío':template?'Enviar plantilla al número de prueba':message===undefined?'Enviar recordatorio al número de prueba':'Enviar por API al número de prueba'}</button>}
     <button disabled={busy} onClick={()=>refresh()}>Actualizar estado</button>{error&&<p role="alert">{error}</p>}</section>;
 }
