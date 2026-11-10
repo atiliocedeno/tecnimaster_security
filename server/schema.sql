@@ -24,3 +24,6 @@ CREATE TABLE IF NOT EXISTS whatsapp_inbound(
 CREATE INDEX IF NOT EXISTS whatsapp_inbound_thread ON whatsapp_inbound(phone,received_at);
 
 ALTER TABLE whatsapp_inbound ADD COLUMN IF NOT EXISTS notification_seen BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS quota_month DATE;
+CREATE INDEX IF NOT EXISTS whatsapp_reminder_month ON whatsapp_test_reminders(quota_month) WHERE quota_month IS NOT NULL;

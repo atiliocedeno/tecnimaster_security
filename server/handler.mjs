@@ -1,5 +1,5 @@
 import {conversation} from './conversation.mjs';
-import {sandboxEnabled,reminderState,sendReminder} from './test-reminders.mjs';
+import {monthlyQuota,sandboxEnabled,reminderState,sendReminder} from './test-reminders.mjs';
 import {demoStatus,demoStep} from './demo-loader.mjs';
 import {z} from 'zod';
 import {serviceData,serviceMutation,evidenceData} from './services.mjs';
@@ -36,7 +36,7 @@ export function createHandler(db,config=process.env){
       return reply(rows.sort((a,b)=>new Date(b.received_at)-new Date(a.received_at)));
     }
     if(action==='conversation' && sandboxEnabled(config))return reply(await conversation(db,new URL(req.url).searchParams.get('id')));
-    if(action==='waTestState' && sandboxEnabled(config))return reply(await reminderState(db,new URL(req.url).searchParams.get('id')));
+    if(action==='waTestState' && sandboxEnabled(config))return reply({...await reminderState(db,new URL(req.url).searchParams.get('id')),quota:await monthlyQuota(db)});
     if(action==='demoStatus'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStatus(db));}
     if(action==='services')return reply(await serviceData(db));
     if(action==='evidence')return reply(await evidenceData(db,new URL(req.url).searchParams.get('id')));
@@ -52,7 +52,7 @@ export function createHandler(db,config=process.env){
      return reply({ok:true});
    }
    if(b.action==='waHandled' && sandboxEnabled(config)){await db.query('UPDATE whatsapp_inbound SET handled=true WHERE wamid=$1',[z.string().max(512).parse(b.id)]);return reply({ok:true});}
-   if(b.action==='waMonthlyTemplate')return reply(await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,undefined,true));
+   if(b.action==='waMonthlyTemplate')return reply({...await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,undefined,true),quota:await monthlyQuota(db)});
    if(b.action==='waTestSend')return reply(await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,z.string().trim().min(1).max(4000).optional().parse(b.data)));
    if(b.action==='demoLoad'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStep(db,config.COBRANZA_USERNAME));}
    if(b.action==='reversePayment'&&b.data?.paymentId){const found=await db.query('SELECT report_id AS reported_payment_id FROM reported_payment_allocations WHERE payment_id=$1',[b.data.paymentId]);if(found.rows[0]?.reported_payment_id)throw new DomainError('Reversa este pago desde Pagos por validar para conservar vinculada su evidencia.',409);}

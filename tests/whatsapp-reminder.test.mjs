@@ -104,3 +104,20 @@ test('API rejection exposes Meta code and a successful retry clears it', async()
     assert.deepEqual(accepted,{status:'accepted',wamid:'wamid.retry'});
   }finally{await db.close();}
 });
+
+test('only one of two simultaneous templates can reserve the last monthly slot',async()=>{
+ const db=new PGlite();
+ try{
+  await migrate(db);
+  await db.query("INSERT INTO clients(id,name,phone,cars,notes) VALUES('quota','Prueba','+56911112222','','')");
+  await db.query(`INSERT INTO invoices(id,"clientId",period,due,amount) SELECT 'q'||n,'quota',n::text,'2099-12-05',100 FROM generate_series(1,501) AS n`);
+  await db.query(`INSERT INTO whatsapp_test_reminders(invoice_id,correlation,quota_month) SELECT 'q'||n,'c'||n,date_trunc('month',now() AT TIME ZONE 'America/Santiago')::date FROM generate_series(1,499) AS n`);
+  const config={WHATSAPP_TEST_ENABLED:'true',WHATSAPP_TEST_RECIPIENT:'56911112222',WHATSAPP_TEST_ACCESS_TOKEN:'fixture'};
+  let calls=0;
+  const send=id=>sendReminder(db,config,id,async()=>{calls++;return Response.json({messages:[{id:'wamid.quota'}]})},undefined,true);
+  const attempts=await Promise.allSettled([send('q500'),send('q501')]);
+  assert.equal(calls,1);
+  assert.equal(attempts.find(a=>a.status==='rejected').reason.status,429);
+  assert.equal((await db.query('SELECT count(*)::int AS n FROM whatsapp_test_reminders')).rows[0].n,500);
+ }finally{await db.close();}
+});

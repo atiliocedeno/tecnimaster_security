@@ -1,3 +1,4 @@
+import {transaction} from './transactions.mjs';
 import {randomUUID} from 'node:crypto';
 import {phoneInfo} from '../cobranza/calculations.mjs';
 import {DomainError} from './collections.mjs';
@@ -6,6 +7,14 @@ import {templateText,templateName,upcomingMonthly,reminderValues} from '../cobra
 
 const sender = '1448050945057871';
 const ranks = {sent: 2, failed: 3, delivered: 4, read: 5};
+const monthlyLimit = 500;
+const monthInChile = "date_trunc('month', now() AT TIME ZONE 'America/Santiago')::date";
+
+export async function monthlyQuota(db) {
+  const result = await db.query(`SELECT count(*)::int AS used FROM whatsapp_test_reminders
+    WHERE quota_month=${monthInChile} AND status<>'rejected'`);
+  return {used:result.rows[0].used, limit:monthlyLimit};
+}
 export function sandboxEnabled(config) {
   return config.WHATSAPP_TEST_ENABLED === 'true';
 }
@@ -41,7 +50,17 @@ export async function sendReminder(db, config, id, transport=fetch, message, tem
     components:[{type:'body',parameters:reminderValues(bill.name,bill).map(text=>({type:'text',text}))}]}} : {...envelope,type:'text',
     text:{body:message !== undefined ? '[Prueba TecniMaster] '+message : 'Prueba TecniMaster. Recordatorio de cobro ficticio del periodo '+bill.period+' por '+(bill.amount-bill.paid)+' CLP. No requiere pago.'}};
   const body=template ? templateText.replace(/\{\{(\d)\}\}/g,(_,n)=>payload.template.components[0].parameters[Number(n)-1].text) : payload.text.body;
-  const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation,recipient,body,sent_at) VALUES($1,$2,$3,$4,now()) ON CONFLICT(invoice_id) DO UPDATE SET recipient=$3,body=$4,sent_at=now(),correlation=$2,status=\'pending\',progress=0,meta_error=NULL WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation,to,body]);
+  const reserved = await transaction(db,async tx=>{
+    if(template)await tx.query('LOCK TABLE whatsapp_test_reminders IN SHARE ROW EXCLUSIVE MODE');
+    const result=await tx.query(`INSERT INTO whatsapp_test_reminders(invoice_id,correlation,recipient,body,sent_at,quota_month)
+      VALUES($1,$2,$3,$4,now(),CASE WHEN $5 THEN ${monthInChile} ELSE NULL END)
+      ON CONFLICT(invoice_id) DO UPDATE SET recipient=$3,body=$4,sent_at=now(),quota_month=excluded.quota_month,
+        correlation=$2,status='pending',progress=0,meta_error=NULL
+      WHERE whatsapp_test_reminders.status='rejected' RETURNING invoice_id`,[id,correlation,to,body,template]);
+    if(template && result.rows.length && (await monthlyQuota(tx)).used>monthlyLimit)
+      throw new DomainError('Alcanzaste el tope mensual de 500 plantillas de WhatsApp.',429);
+    return result;
+  });
   if (!reserved.rows.length) return reminderState(db,id);
   let response, result;
   try {
