@@ -1,6 +1,6 @@
 import {Conversation} from './Conversation';
 import React,{useState} from 'react';
-import {MessageCircle} from 'lucide-react';
+import {ChevronDown,MessageCircle} from 'lucide-react';
 import {Client,Invoice,debt,money,phoneValid} from './logic';
 import {phoneInfo} from './calculations.mjs';
 import {templateText,upcomingMonthly,reminderValues} from './monthly-template.mjs';
@@ -35,7 +35,7 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
 
  {!individual&&<div className="tabs"><button className={group==='ready'?'selected':''} onClick={()=>{setGroup('ready');setPage(1)}}>Listos para contactar ({enabled.length})</button><button className={group==='blocked'?'selected':''} onClick={()=>{setGroup('blocked');setPage(1)}}>Necesitan corrección ({blocked.length})</button></div>}
  {!individual&&group==='ready'&&<><label>Mensaje general<textarea rows={4} value={template} onChange={e=>setTemplate(e.target.value)}/></label><small>Variables: {'{nombre}, {monto}, {periodos}'}. Se reemplazan para cada destinatario. Los mensajes editados individualmente conservan sus cambios.</small></>}
- {(!selectedBill||messageMode==='custom')&&<><div className="wa-list">{list.slice((current-1)*10,current*10).map(({c,amount,reason,message,invoice})=><article key={c.id}><strong>{c.name} <span>{money(amount)}</span></strong>{reason?<><p>{reason}</p><button onClick={()=>onCorrect(c)}>Corregir contacto de {c.name}</button><small>Para revisar cargos o reactivar, abre la ficha del cliente. Tus mensajes se conservan mientras corriges el contacto.</small></>:<><label>Mensaje para {c.name}<textarea rows={4} value={message} onChange={e=>setCustom({...custom,[c.id]:e.target.value})}/></label>{custom[c.id]!==undefined&&<button onClick={()=>setCustom(v=>{const next={...v};delete next[c.id];return next})}>Usar mensaje general</button>}{testRecipient && (phoneInfo(c.whatsapp||c.phone).normalized==='+'+testRecipient && invoice
+ {(!selectedBill||messageMode==='custom')&&<><div className={individual ? "wa-personal" : "wa-list"}>{list.slice((current-1)*10,current*10).map(({c,amount,reason,message,invoice})=><article key={c.id} className={individual ? 'notes' : undefined}>{individual ? <h3>Mensaje personalizado</h3> : <strong>{c.name} <span>{money(amount)}</span></strong>}{reason?<><p>{reason}</p><button onClick={()=>onCorrect(c)}>Corregir contacto de {c.name}</button><small>Para revisar cargos o reactivar, abre la ficha del cliente. Tus mensajes se conservan mientras corriges el contacto.</small></>:<><label>Mensaje para {c.name}<textarea rows={4} value={message} onChange={e=>setCustom({...custom,[c.id]:e.target.value})}/></label>{custom[c.id]!==undefined&&<button onClick={()=>setCustom(v=>{const next={...v};delete next[c.id];return next})}>Usar mensaje general</button>}{testRecipient && (phoneInfo(c.whatsapp||c.phone).normalized==='+'+testRecipient && invoice
  ? <><p>La API enviará este texto con el prefijo «[Prueba TecniMaster]» al número terminado en {testRecipient.slice(-4)}.</p>
  <ReminderTest key={invoice.id} id={invoice.id} eligible={!!message.trim() && message.trim().length<=4000} message={message.trim()}/>
  {message.trim().length>4000&&<p>Reduce el texto a 4000 caracteres para enviar la prueba.</p>}</>
@@ -44,6 +44,6 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
  {!list.length&&(!individual||!selectedBill||messageMode==='custom')&&<p>{individual?'Este cliente no tiene mensualidades vencidas en el período seleccionado.':group==='ready'?'No hay destinatarios listos. Revisa la pestaña Necesitan corrección.':'No hay contactos que corregir.'}</p>}
  {pages>1&&<footer className="table-footer"><span>Página {current} de {pages}</span><div><button disabled={current<=1} onClick={()=>setPage(current-1)}>Anterior</button><button disabled={current>=pages} onClick={()=>setPage(current+1)}>Siguiente</button></div></footer>}
  </>}
- {selectedClient&&testRecipient&&<details><summary>Ver conversación</summary><Conversation key={selectedClient.id} id={selectedClient.id}/></details>}
+ {selectedClient&&testRecipient&&<details className="wa-history"><summary><MessageCircle size={18} aria-hidden="true"/>Ver conversación<ChevronDown className="wa-history-chevron" size={18} aria-hidden="true"/></summary><Conversation key={selectedClient.id} id={selectedClient.id}/></details>}
  </Modal>;
 }
