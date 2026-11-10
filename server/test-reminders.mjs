@@ -11,8 +11,10 @@ const monthlyLimit = 500;
 const monthInChile = "date_trunc('month', now() AT TIME ZONE 'America/Santiago')::date";
 
 export async function monthlyQuota(db) {
-  const result = await db.query(`SELECT count(*)::int AS used FROM whatsapp_test_reminders
-    WHERE quota_month=${monthInChile} AND status<>'rejected'`);
+  const result = await db.query(`SELECT (
+    (SELECT count(*) FROM whatsapp_test_reminders WHERE quota_month=${monthInChile} AND status<>'rejected') +
+    (SELECT count(*) FROM whatsapp_failed_attempts WHERE quota_month=${monthInChile})
+  )::int AS used`);
   return {used:result.rows[0].used, limit:monthlyLimit};
 }
 export function sandboxEnabled(config) {
@@ -51,12 +53,15 @@ export async function sendReminder(db, config, id, transport=fetch, message, tem
     text:{body:message !== undefined ? '[Prueba TecniMaster] '+message : 'Prueba TecniMaster. Recordatorio de cobro ficticio del periodo '+bill.period+' por '+(bill.amount-bill.paid)+' CLP. No requiere pago.'}};
   const body=template ? templateText.replace(/\{\{(\d)\}\}/g,(_,n)=>payload.template.components[0].parameters[Number(n)-1].text) : payload.text.body;
   const reserved = await transaction(db,async tx=>{
-    if(template)await tx.query('LOCK TABLE whatsapp_test_reminders IN SHARE ROW EXCLUSIVE MODE');
+    await tx.query('LOCK TABLE whatsapp_test_reminders IN SHARE ROW EXCLUSIVE MODE');
+    await tx.query(`INSERT INTO whatsapp_failed_attempts(correlation,invoice_id,wamid,quota_month,body,sent_at,meta_error)
+      SELECT correlation,invoice_id,wamid,quota_month,body,sent_at,meta_error FROM whatsapp_test_reminders
+      WHERE invoice_id=$1 AND status='failed'`,[id]);
     const result=await tx.query(`INSERT INTO whatsapp_test_reminders(invoice_id,correlation,recipient,body,sent_at,quota_month)
       VALUES($1,$2,$3,$4,now(),CASE WHEN $5 THEN ${monthInChile} ELSE NULL END)
       ON CONFLICT(invoice_id) DO UPDATE SET recipient=$3,body=$4,sent_at=now(),quota_month=excluded.quota_month,
-        correlation=$2,status='pending',progress=0,meta_error=NULL
-      WHERE whatsapp_test_reminders.status='rejected' RETURNING invoice_id`,[id,correlation,to,body,template]);
+        correlation=$2,wamid=NULL,status='pending',progress=0,meta_error=NULL
+      WHERE whatsapp_test_reminders.status IN ('rejected','failed') RETURNING invoice_id`,[id,correlation,to,body,template]);
     if(template && result.rows.length && (await monthlyQuota(tx)).used>monthlyLimit)
       throw new DomainError('Alcanzaste el tope mensual de 500 plantillas de WhatsApp.',429);
     return result;
