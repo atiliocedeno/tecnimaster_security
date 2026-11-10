@@ -121,3 +121,14 @@ input[type=checkbox]{accent-color:var(--tm-red)}
 .message-bell h3{margin:0}.message-bell article{margin-top:12px;padding-top:12px;border-top:1px solid var(--tm-border)}
 .message-bell article p{overflow-wrap:anywhere;margin:5px 0 8px}
 @media(max-width:600px){.page-heading{flex-wrap:wrap}.page-heading .heading-actions{margin-left:auto}.message-bell section{right:-110px;width:min(310px,90vw)}}
+
+.wa-personal textarea { width:100%; box-sizing:border-box; resize:vertical; }
+.wa-personal .manual-chat { display:inline-flex; align-items:center; gap:8px; padding:10px 0; color:inherit; }
+.wa-personal small { display:block; margin-top:8px; }
+.wa-history { margin:24px 0 0; padding-top:16px; border-top:1px solid var(--tm-border); }
+.wa-history > summary { display:flex; align-items:center; gap:10px; min-height:44px; padding:0 14px; border:1px solid var(--tm-border); border-radius:8px; background:#fff; color:#41474d; font-weight:600; cursor:pointer; list-style:none; }
+.wa-history > summary::-webkit-details-marker { display:none; }
+.wa-history > summary:focus-visible { outline:2px solid currentColor; outline-offset:3px; }
+.wa-history-chevron { margin-left:auto; }
+.wa-history[open] > summary { margin-bottom:12px; }
+.wa-history[open] .wa-history-chevron { transform:rotate(180deg); }
