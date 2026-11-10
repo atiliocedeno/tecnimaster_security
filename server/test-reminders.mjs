@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto';
 import {phoneInfo} from '../cobranza/calculations.mjs';
 import {DomainError} from './collections.mjs';
 
-import {templateName,upcomingMonthly,reminderValues} from '../cobranza/monthly-template.mjs';
+import {templateText,templateName,upcomingMonthly,reminderValues} from '../cobranza/monthly-template.mjs';
 
 const sender = '1448050945057871';
 const ranks = {sent: 2, failed: 3, delivered: 4, read: 5};
@@ -36,12 +36,13 @@ export async function sendReminder(db, config, id, transport=fetch, message, tem
   if (template && (!matchesRecipient || !bill.active || !['whatsapp','both'].includes(bill.delivery_method || 'whatsapp') || !upcomingMonthly(bill)))
     throw new DomainError('Elige una mensualidad vigente del destinatario autorizado para esta prueba.',400);
   const correlation = randomUUID();
-  const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation) VALUES($1,$2) ON CONFLICT(invoice_id) DO UPDATE SET correlation=$2,status=\'pending\',progress=0,meta_error=NULL WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation]);
-  if (!reserved.rows.length) return reminderState(db,id);
   const envelope={messaging_product:'whatsapp',to,biz_opaque_callback_data:correlation};
   const payload = template ? {...envelope,type:'template',template:{name:templateName,language:{code:'es'},
     components:[{type:'body',parameters:reminderValues(bill.name,bill).map(text=>({type:'text',text}))}]}} : {...envelope,type:'text',
     text:{body:message !== undefined ? '[Prueba TecniMaster] '+message : 'Prueba TecniMaster. Recordatorio de cobro ficticio del periodo '+bill.period+' por '+(bill.amount-bill.paid)+' CLP. No requiere pago.'}};
+  const body=template ? templateText.replace(/\{\{(\d)\}\}/g,(_,n)=>payload.template.components[0].parameters[Number(n)-1].text) : payload.text.body;
+  const reserved = await db.query('INSERT INTO whatsapp_test_reminders(invoice_id,correlation,recipient,body,sent_at) VALUES($1,$2,$3,$4,now()) ON CONFLICT(invoice_id) DO UPDATE SET recipient=$3,body=$4,sent_at=now(),correlation=$2,status=\'pending\',progress=0,meta_error=NULL WHERE whatsapp_test_reminders.status=\'rejected\' RETURNING invoice_id',[id,correlation,to,body]);
+  if (!reserved.rows.length) return reminderState(db,id);
   let response, result;
   try {
     response = await transport('https://graph.facebook.com/v25.0/'+sender+'/messages',{
@@ -59,6 +60,12 @@ export async function applyStatuses(db,event) {
   for (const entry of event.entry) for (const change of entry.changes ?? []) {
     const value = change.value;
     if (change.field!=='messages' || value?.metadata?.phone_number_id!==sender) continue;
+    for (const msg of value.messages ?? []) {
+      if (!msg?.id || !/^[1-9]\d{7,14}$/.test(msg.from) || !/^\d{1,11}$/.test(String(msg.timestamp))) continue;
+      const body=msg.text?.body ?? msg[msg.type]?.caption ?? ('Mensaje de tipo '+String(msg.type));
+      await db.query('INSERT INTO whatsapp_inbound(wamid,phone,body,received_at,reply_to) VALUES($1,$2,$3,to_timestamp($4),$5) ON CONFLICT DO NOTHING',
+        [msg.id,msg.from,body,Number(msg.timestamp),msg.context?.id ?? null]);
+    }
     for (const item of value.statuses ?? []) {
       if (!Object.hasOwn(ranks,item.status) || typeof item.id!=='string') continue;
       await db.query('UPDATE whatsapp_test_reminders SET wamid=$1,status=$2,progress=$3,meta_error=$5::jsonb WHERE (wamid=$1 OR (wamid IS NULL AND correlation=$4)) AND (progress<$3 OR (progress=$3 AND meta_error IS NULL AND $5::jsonb IS NOT NULL))',

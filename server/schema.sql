@@ -13,3 +13,12 @@ CREATE TABLE IF NOT EXISTS whatsapp_test_reminders (
 );
 
 ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS meta_error JSONB;
+
+ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS recipient TEXT;
+ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS body TEXT;
+ALTER TABLE whatsapp_test_reminders ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+CREATE TABLE IF NOT EXISTS whatsapp_inbound(
+ wamid TEXT PRIMARY KEY, phone TEXT NOT NULL, body TEXT NOT NULL,
+ received_at TIMESTAMPTZ NOT NULL, reply_to TEXT, handled BOOLEAN NOT NULL DEFAULT false
+);
+CREATE INDEX IF NOT EXISTS whatsapp_inbound_thread ON whatsapp_inbound(phone,received_at);

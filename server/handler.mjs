@@ -1,3 +1,4 @@
+import {conversation} from './conversation.mjs';
 import {sandboxEnabled,reminderState,sendReminder} from './test-reminders.mjs';
 import {demoStatus,demoStep} from './demo-loader.mjs';
 import {z} from 'zod';
@@ -27,6 +28,7 @@ export function createHandler(db,config=process.env){
    }
    if(!authenticated)return reply({error:'Inicia sesión para acceder a Cobranza.'},401);
    if(req.method==='GET'){
+    if(action==='conversation' && sandboxEnabled(config))return reply(await conversation(db,new URL(req.url).searchParams.get('id')));
     if(action==='waTestState' && sandboxEnabled(config))return reply(await reminderState(db,new URL(req.url).searchParams.get('id')));
     if(action==='demoStatus'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStatus(db));}
     if(action==='services')return reply(await serviceData(db));
@@ -37,6 +39,7 @@ export function createHandler(db,config=process.env){
     return reply({...await collectionsData(db,{scope,clientId}),waTestEnabled:sandboxEnabled(config),waTestRecipient:sandboxEnabled(config)?config.WHATSAPP_TEST_RECIPIENT:undefined,testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
    }
    const b=z.object({action:z.string(),data:z.unknown().optional(),id:z.unknown().optional()}).parse(await req.json());
+   if(b.action==='waHandled' && sandboxEnabled(config)){await db.query('UPDATE whatsapp_inbound SET handled=true WHERE wamid=$1',[z.string().max(512).parse(b.id)]);return reply({ok:true});}
    if(b.action==='waMonthlyTemplate')return reply(await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,undefined,true));
    if(b.action==='waTestSend')return reply(await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,z.string().trim().min(1).max(4000).optional().parse(b.data)));
    if(b.action==='demoLoad'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStep(db,config.COBRANZA_USERNAME));}

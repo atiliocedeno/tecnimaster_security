@@ -1,3 +1,4 @@
+import {Conversation} from './Conversation';
 import React,{useState} from 'react';
 import {MessageCircle} from 'lucide-react';
 import {Client,Invoice,debt,money,phoneValid} from './logic';
@@ -40,5 +41,6 @@ export function WhatsAppComposer({clients,invoices,ids,period,onClose,onCorrect,
  {message.trim()?<a className="manual-chat" href={`https://wa.me/${phoneInfo(c.whatsapp||c.phone).normalized.replace('+','')}?text=${encodeURIComponent(message)}`} target="_blank" rel="noopener noreferrer" onClick={()=>setOpened(v=>v.includes(c.id)?v:[...v,c.id])}><MessageCircle size={16}/>{opened.includes(c.id)?'Volver a abrir WhatsApp':'Abrir chat para envío manual'}</a>:<p>Escribe un mensaje antes de abrir WhatsApp.</p>}{opened.includes(c.id)&&<small>Chat abierto; no hay confirmación de envío.</small>}</>}</article>)}</div>
  {!list.length&&(!individual||!selectedBill)&&<p>{individual?'Este cliente no tiene mensualidades vencidas en el período seleccionado.':group==='ready'?'No hay destinatarios listos. Revisa la pestaña Necesitan corrección.':'No hay contactos que corregir.'}</p>}
  {pages>1&&<footer className="table-footer"><span>Página {current} de {pages}</span><div><button disabled={current<=1} onClick={()=>setPage(current-1)}>Anterior</button><button disabled={current>=pages} onClick={()=>setPage(current+1)}>Siguiente</button></div></footer>}
+ {selectedClient&&testRecipient&&<details><summary>Ver conversación</summary><Conversation key={selectedClient.id} id={selectedClient.id}/></details>}
  </Modal>;
 }
