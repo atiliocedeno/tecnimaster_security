@@ -1,3 +1,5 @@
+import {conversation} from './conversation.mjs';
+import {monthlyQuota,sandboxEnabled,reminderState,sendReminder} from './test-reminders.mjs';
 import {demoStatus,demoStep} from './demo-loader.mjs';
 import {z} from 'zod';
 import {serviceData,serviceMutation,evidenceData} from './services.mjs';
@@ -26,15 +28,32 @@ export function createHandler(db,config=process.env){
    }
    if(!authenticated)return reply({error:'Inicia sesión para acceder a Cobranza.'},401);
    if(req.method==='GET'){
+    if(action==='waPending' && sandboxEnabled(config)){
+      const {rows}=await db.query(`SELECT DISTINCT ON (phone) phone,count(*) OVER(PARTITION BY phone)::int AS pending,
+        array_agg(wamid) FILTER (WHERE NOT notification_seen) OVER(PARTITION BY phone) AS unseen,
+        left(body,100) AS preview,received_at FROM whatsapp_inbound WHERE NOT handled
+        ORDER BY phone,received_at DESC,wamid DESC`);
+      return reply(rows.sort((a,b)=>new Date(b.received_at)-new Date(a.received_at)));
+    }
+    if(action==='conversation' && sandboxEnabled(config))return reply(await conversation(db,new URL(req.url).searchParams.get('id')));
+    if(action==='waTestState' && sandboxEnabled(config))return reply({...await reminderState(db,new URL(req.url).searchParams.get('id')),quota:await monthlyQuota(db)});
     if(action==='demoStatus'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStatus(db));}
     if(action==='services')return reply(await serviceData(db));
     if(action==='evidence')return reply(await evidenceData(db,new URL(req.url).searchParams.get('id')));
     const params=new URL(req.url).searchParams;
     const scope=z.enum(['full','overview','client','payments']).parse(params.get('scope')||'full');
     const clientId=scope==='client'?z.string().min(1).max(200).parse(params.get('clientId')):'';
-    return reply({...await collectionsData(db,{scope,clientId}),testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
+    return reply({...await collectionsData(db,{scope,clientId}),waTestEnabled:sandboxEnabled(config),waTestRecipient:sandboxEnabled(config)?config.WHATSAPP_TEST_RECIPIENT:undefined,testImportsEnabled:config.COBRANZA_TEST_IMPORTS==="true"});
    }
    const b=z.object({action:z.string(),data:z.unknown().optional(),id:z.unknown().optional()}).parse(await req.json());
+   if(b.action==='waNotificationsSeen' && sandboxEnabled(config)){
+     const ids=z.array(z.string().min(1).max(512)).min(1).max(500).parse(b.data);
+     await db.query('UPDATE whatsapp_inbound SET notification_seen=true WHERE wamid=ANY($1::text[]) AND NOT notification_seen',[ids]);
+     return reply({ok:true});
+   }
+   if(b.action==='waHandled' && sandboxEnabled(config)){await db.query('UPDATE whatsapp_inbound SET handled=true WHERE wamid=$1',[z.string().max(512).parse(b.id)]);return reply({ok:true});}
+   if(b.action==='waMonthlyTemplate')return reply({...await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,undefined,true),quota:await monthlyQuota(db)});
+   if(b.action==='waTestSend')return reply(await sendReminder(db,config,z.string().max(200).parse(b.id),fetch,z.string().trim().min(1).max(4000).optional().parse(b.data)));
    if(b.action==='demoLoad'){if(config.COBRANZA_TEST_IMPORTS!=='true')return reply({error:'Modo de pruebas deshabilitado'},403);return reply(await demoStep(db,config.COBRANZA_USERNAME));}
    if(b.action==='reversePayment'&&b.data?.paymentId){const found=await db.query('SELECT report_id AS reported_payment_id FROM reported_payment_allocations WHERE payment_id=$1',[b.data.paymentId]);if(found.rows[0]?.reported_payment_id)throw new DomainError('Reversa este pago desde Pagos por validar para conservar vinculada su evidencia.',409);}
    if(b.action.startsWith('service.'))await serviceMutation(db,b,config.COBRANZA_USERNAME);
